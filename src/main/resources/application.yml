@@ -1,21 +1,36 @@
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5433/email_job_tracker
-    username: ${DB_USER:app}
-    password: ${DB_PASS:app}
-  jpa:
-    hibernate:
-      ddl-auto: none
-    properties:
-      hibernate.jdbc.time_zone: UTC
-      hibernate.format_sql: true
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-
 server:
   port: 8080
 
-logging:
-  level:
-    org.hibernate.SQL: warn
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/email_job_tracker
+    username: app
+    password: app
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  config:
+    import: optional:file:.env[.properties]
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: 848707604002-53qv6heps2cl7mrd704svikfon4rklcn.apps.googleusercontent.com
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - openid
+              - email
+              - profile
+              - https://www.googleapis.com/auth/gmail.readonly
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+
