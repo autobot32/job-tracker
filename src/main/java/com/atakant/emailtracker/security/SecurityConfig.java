@@ -18,7 +18,7 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/health")) // tweak as needed
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/health", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/", "/health", "/swagger-ui/**", "/v3/api-docs/**", "/verify.html").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth -> oauth

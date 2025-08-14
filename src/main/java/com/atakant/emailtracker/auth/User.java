@@ -11,6 +11,7 @@ import java.util.UUID;
 public class User {
 
     @Id
+    @GeneratedValue
     private UUID id;
 
     @Column(nullable = false, unique = true)
@@ -24,7 +25,6 @@ public class User {
 
     @PrePersist
     void prePersist() {
-        if (id == null) id = UUID.randomUUID();
         if (createdAt == null) createdAt = Instant.now();
     }
 }
