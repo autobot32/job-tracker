@@ -1,6 +1,11 @@
 server:
   port: 8080
 
+logging:
+  level:
+    org.springframework.web.client: DEBUG
+
+
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5433/email_job_tracker
@@ -13,8 +18,12 @@ spring:
       hibernate.jdbc.time_zone: UTC
   flyway:
     enabled: true
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
   config:
     import: optional:file:.env[.properties]
+
   security:
     oauth2:
       client:
@@ -33,4 +42,3 @@ spring:
             authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
             token-uri: https://oauth2.googleapis.com/token
             user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
-

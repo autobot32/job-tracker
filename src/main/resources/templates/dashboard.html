@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Dashboard</title></head>
+<body>
+<h1 th:text="'Connected as ' + ${email}">Connected</h1>
+
+<form th:action="@{/ingest/preview}" method="post">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
+    <button type="submit">Fetch 25 recent emails</button>
+</form>
+<pre th:if="${payload != null}" th:text="${payload}"></pre>
+</body>
+</html>
