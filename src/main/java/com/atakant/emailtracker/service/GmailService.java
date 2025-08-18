@@ -3,6 +3,7 @@ package com.atakant.emailtracker.service;
 import com.atakant.emailtracker.auth.User;
 import com.atakant.emailtracker.auth.UserRepository;
 import com.atakant.emailtracker.domain.Email;
+import com.atakant.emailtracker.repo.EmailRepository;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.*;
 import jakarta.mail.internet.MailDateFormat;
@@ -26,6 +27,7 @@ public class GmailService {
 
     private final OAuth2AuthorizedClientManager clientManager;
     private final UserRepository userRepository;
+    private final EmailRepository emailRepository;
     private final Gmail gmail;
 
     /**
@@ -33,7 +35,7 @@ public class GmailService {
      */
     public List<Email> fetchEmailsSince(Authentication authentication, String afterYyyyMmDd) throws Exception {
         final int pageSize = 25;
-        final String q = "after:" + afterYyyyMmDd + " category:primary -in:chats";
+        final String q = "after:" + afterYyyyMmDd + " in:anywhere -in:chats";
 
         String pageToken = null;
         List<Email> emails = new ArrayList<>();
@@ -43,8 +45,9 @@ public class GmailService {
 
             ListMessagesResponse resp = gmail.users().messages()
                     .list("me")
-                    .setQ(q)
-                    .setIncludeSpamTrash(true)
+                    .setLabelIds(List.of("INBOX"))   // <- use label, not category
+                    .setQ("after:" + afterYyyyMmDd + " -in:chats")
+                    .setIncludeSpamTrash(false)
                     .setMaxResults((long) pageSize)
                     .setFields("messages(id,threadId),nextPageToken,resultSizeEstimate")
                     .setPageToken(pageToken)
@@ -101,6 +104,8 @@ public class GmailService {
         } while (pageToken != null);
 
         log.info("Fetched {} emails", emails.size());
+        emailRepository.saveAll(emails);
+
         return emails;
     }
 

@@ -19,8 +19,10 @@ import java.time.Instant;
 public class Email {
 
     @Id
-    @GeneratedValue
-    private UUID id;   // PK
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @Column(updatable = false, nullable = false)
+    private UUID id; // PK
+
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;   // FK to users
