@@ -1,12 +1,16 @@
 package com.atakant.emailtracker.controller;
 
+import com.atakant.emailtracker.domain.Email;
 import com.atakant.emailtracker.service.GmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Controller
 @RequestMapping("/ingest")
@@ -17,16 +21,17 @@ public class IngestController {
 
     @PostMapping("/preview")
     public String preview(Model model,
-                          @org.springframework.security.core.annotation.AuthenticationPrincipal OAuth2User principal,
+                          @AuthenticationPrincipal OAuth2User principal,
                           Authentication authentication) {
         model.addAttribute("email", principal.getAttribute("email"));
         try {
-            String payload = gmailService.listMessages(authentication, 25);
-            model.addAttribute("payload", payload);
+            List<Email> emails = gmailService.fetchEmailsSince(authentication, "2024/08/01");
+            model.addAttribute("emails", emails);
         } catch (Exception e) {
-            model.addAttribute("payload", "Gmail API error: " + e.getMessage());
+            model.addAttribute("error", "Gmail API error: " + e.getMessage());
         }
         return "dashboard";
     }
+
 }
 
