@@ -4,6 +4,7 @@ server:
 logging:
   level:
     org.springframework.web.client: DEBUG
+    org.springframework.security: DEBUG
 
 
 spring:

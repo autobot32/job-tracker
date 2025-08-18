@@ -3,147 +3,153 @@ package com.atakant.emailtracker.service;
 import com.atakant.emailtracker.auth.User;
 import com.atakant.emailtracker.auth.UserRepository;
 import com.atakant.emailtracker.domain.Email;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.services.gmail.Gmail;
+import com.google.api.services.gmail.model.*;
+import jakarta.mail.internet.MailDateFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.*;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import jakarta.mail.internet.MailDateFormat;
-import java.util.UUID;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.stereotype.Service;
 
-
-
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
-
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class GmailService {
+
     private final OAuth2AuthorizedClientManager clientManager;
-    private final RestTemplate rest = new RestTemplate();
-    private final ObjectMapper mapper = new ObjectMapper();
     private final UserRepository userRepository;
+    private final Gmail gmail;
 
+    /**
+     * Fetch emails after a given date (YYYY/MM/DD).
+     */
     public List<Email> fetchEmailsSince(Authentication authentication, String afterYyyyMmDd) throws Exception {
-        String token = resolveAccessToken(authentication);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-
         final int pageSize = 25;
         final String q = "after:" + afterYyyyMmDd + " category:primary -in:chats";
 
-        String nextPageToken = null;
+        String pageToken = null;
         List<Email> emails = new ArrayList<>();
 
         do {
-            // Step 1: List messages
-            String url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
-                    + "?maxResults=" + pageSize
-                    + "&q=" + URLEncoder.encode(q, StandardCharsets.UTF_8)
-                    + (nextPageToken != null ? "&pageToken=" + nextPageToken : "");
+            // List messages with query + pagination
 
-            String listJson = rest.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), String.class).getBody();
-            JsonNode list = mapper.readTree(listJson);
-            JsonNode ids = list.path("messages");
-            nextPageToken = list.has("nextPageToken") ? list.get("nextPageToken").asText(null) : null;
+            ListMessagesResponse resp = gmail.users().messages()
+                    .list("me")
+                    .setQ(q)
+                    .setIncludeSpamTrash(true)
+                    .setMaxResults((long) pageSize)
+                    .setFields("messages(id,threadId),nextPageToken,resultSizeEstimate")
+                    .setPageToken(pageToken)
+                    .execute();
+            log.info("After resp");
 
-            if (!ids.isArray() || ids.isEmpty()) break;
+            List<Message> msgs = resp.getMessages();
+            if (msgs == null || msgs.isEmpty()) break;
 
-            for (JsonNode node : ids) {
-                String id = node.path("id").asText();
+            OAuth2User principal = (OAuth2User) authentication.getPrincipal();
 
-                // Step 2: Get full message
-                String getUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id + "?format=full";
-                String fullJson = rest.exchange(getUrl, HttpMethod.GET, new HttpEntity<>(headers), String.class).getBody();
-                JsonNode msg = mapper.readTree(fullJson);
+            log.info("Before findbyemail");
+            User user = userRepository.findByEmail(principal.getAttribute("email"))
+                    .orElseThrow(() -> new IllegalStateException("User not found"));
+            log.info("After findbyemail");
 
-                // Extract headers
-                JsonNode headersNode = msg.path("payload").path("headers");
-                String dateHeader = header(headersNode, "Date");
-                String subject = header(headersNode, "Subject");
-                String from = header(headersNode, "From");
-                String to = header(headersNode, "To");
-
-                // Extract body
-                String body = extractBodyText(msg.path("payload"));
-
-                OAuth2User principal = (OAuth2User) authentication.getPrincipal();
-                User user = userRepository.findByEmail(principal.getAttribute("email"))
-                        .orElseThrow(() -> new IllegalStateException("User not found"));
-                UUID userId = user.getId();
+            for (Message m : msgs) {
+                // Fetch full message
+                log.info("fetching message");
+                Message full = gmail.users().messages().get("me", m.getId())
+                        .setFormat("full")
+                        .setFields("id,threadId,payload")
+                        .execute();
 
 
-                // Build Email object
+
+                var headers = full.getPayload().getHeaders();
+                String dateHeader = header(headers, "Date");
+                String subject    = header(headers, "Subject");
+                String from       = header(headers, "From");
+                String to         = header(headers, "To");
+
+                String body = extractBodyText(full.getPayload());
+
                 Email email = Email.builder()
-                        .userId(userId)
-                        .gmailId(msg.path("id").asText(""))
-                        .threadId(msg.path("threadId").asText(""))
-                        .messageIdHash(header(headersNode, "Message-ID")) // safe unique identifier
+                        .userId(user.getId())
+                        .gmailId(full.getId())
+                        .threadId(full.getThreadId())
+                        .messageIdHash(header(headers, "Message-ID"))
                         .fromAddr(from)
                         .toAddr(to)
                         .subject(subject)
-                        .sentAt(parseDateHeader(dateHeader)) // helper to parse into Instant
+                        .sentAt(parseDateHeader(dateHeader))
                         .bodyText(body)
-                        .internalDateMs(msg.path("internalDate").asLong(0))
+                        .internalDateMs(full.getInternalDate() == null ? 0L : full.getInternalDate())
                         .build();
 
                 emails.add(email);
             }
-        } while (nextPageToken != null);
 
-        log.info("Fetched {} emails: {}", emails.size(), emails);
+            log.info("added all emails");
 
+            pageToken = resp.getNextPageToken();
+        } while (pageToken != null);
+
+        log.info("Fetched {} emails", emails.size());
         return emails;
     }
 
-
-    private String header(JsonNode headers, String name) {
-        if (headers != null && headers.isArray()) {
-            for (JsonNode h : headers) {
-                if (name.equalsIgnoreCase(h.path("name").asText())) {
-                    return h.path("value").asText("");
-                }
+    /**
+     * Helper to extract a header by name.
+     */
+    private String header(List<MessagePartHeader> headers, String name) {
+        if (headers == null) return "";
+        for (MessagePartHeader h : headers) {
+            if (name.equalsIgnoreCase(h.getName())) {
+                return h.getValue();
             }
         }
         return "";
     }
 
-    private String extractBodyText(JsonNode part) {
-        String mime = part.path("mimeType").asText();
+    /**
+     * Recursive helper to extract plain text from message parts.
+     */
+    private String extractBodyText(MessagePart part) {
+        if (part == null) return "";
+
+        String mime = part.getMimeType();
+
         if ("text/plain".equalsIgnoreCase(mime)) {
-            return decodeBody(part.path("body"));
+            return decode(part.getBody());
         }
         if ("text/html".equalsIgnoreCase(mime)) {
-            return stripHtml(decodeBody(part.path("body")));
+            return stripHtml(decode(part.getBody()));
         }
-        JsonNode parts = part.path("parts");
-        if (parts != null && parts.isArray()) {
+
+        if (part.getParts() != null) {
             StringBuilder sb = new StringBuilder();
-            for (JsonNode p : parts) {
+            for (MessagePart p : part.getParts()) {
                 String child = extractBodyText(p);
                 if (!child.isEmpty()) {
-                    if (sb.length() > 0) sb.append('\n');
+                    if (!sb.isEmpty()) sb.append("\n");
                     sb.append(child);
                 }
             }
             return sb.toString();
         }
+
         return "";
     }
 
-    private String decodeBody(JsonNode body) {
-        String data = body.path("data").asText("");
-        if (data.isEmpty()) return "";
-        byte[] bytes = Base64.getUrlDecoder().decode(data);
+    private String decode(MessagePartBody body) {
+        if (body == null || body.getData() == null) return "";
+        byte[] bytes = Base64.getUrlDecoder().decode(body.getData());
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
@@ -157,6 +163,17 @@ public class GmailService {
                 .trim();
     }
 
+    private Instant parseDateHeader(String headerValue) {
+        try {
+            return new MailDateFormat().parse(headerValue).toInstant();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Optional: directly resolve a fresh access token if you ever need it.
+     */
     private String resolveAccessToken(Authentication authentication) {
         OAuth2AuthorizeRequest req = OAuth2AuthorizeRequest
                 .withClientRegistrationId("google")
@@ -167,18 +184,9 @@ public class GmailService {
         if (client == null || client.getAccessToken() == null) {
             throw new IllegalStateException("No authorized Google client for current user.");
         }
-
         return client.getAccessToken().getTokenValue();
     }
-
-    private Instant parseDateHeader(String headerValue) {
-        try {
-            return new MailDateFormat().parse(headerValue).toInstant();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
 }
+
 
 

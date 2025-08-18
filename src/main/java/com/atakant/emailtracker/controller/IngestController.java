@@ -17,7 +17,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class IngestController {
 
-    private final GmailService gmailService;  // <-- this is the 'gmailService' you were missing
+    private final GmailService gmailService;
 
     @PostMapping("/preview")
     public String preview(Model model,
@@ -25,7 +25,7 @@ public class IngestController {
                           Authentication authentication) {
         model.addAttribute("email", principal.getAttribute("email"));
         try {
-            List<Email> emails = gmailService.fetchEmailsSince(authentication, "2024/08/01");
+            List<Email> emails = gmailService.fetchEmailsSince(authentication, "2025-08-10");
             model.addAttribute("emails", emails);
         } catch (Exception e) {
             model.addAttribute("error", "Gmail API error: " + e.getMessage());

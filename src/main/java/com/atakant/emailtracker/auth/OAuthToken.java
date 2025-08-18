@@ -7,27 +7,26 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "oauth_tokens")
-@Getter
-@Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter @Setter
 public class OAuthToken {
 
-    // PK == FK -> users.id (as per your schema)
+    // PK is the same as users.id
     @Id
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @MapsId
+    @OneToOne(optional = false, fetch = FetchType.LAZY)
+    @MapsId // <-- shares PK with User.id; sets userId automatically
     @JoinColumn(name = "user_id")
     private User user;
 
     @Column(nullable = false)
-    private String provider; // "google"
+    private String provider;
 
-    @Column(name = "access_token", nullable = false, length = 4000)
+    @Column(name = "access_token", columnDefinition = "text")
     private String accessToken;
 
-    @Column(name = "refresh_token", length = 4000)
+    @Column(name = "refresh_token", columnDefinition = "text")
     private String refreshToken;
 
     @Column(name = "expires_at")

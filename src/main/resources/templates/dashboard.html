@@ -8,6 +8,6 @@
     <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
     <button type="submit">Fetch 25 recent emails</button>
 </form>
-<pre th:if="${payload != null}" th:text="${payload}"></pre>
+<pre th:if="${emails != null}" th:text="${emails}"></pre>
 </body>
 </html>

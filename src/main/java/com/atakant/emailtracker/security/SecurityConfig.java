@@ -69,9 +69,8 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth -> oauth
-                        .authorizationEndpoint(ep -> ep.authorizationRequestResolver(loggingResolver))
-                        .successHandler(successHandler)
-                        .defaultSuccessUrl("/dashboard", true)
+                                .authorizationEndpoint(ep -> ep.authorizationRequestResolver(loggingResolver))
+                                .successHandler(successHandler)
                 )
                 .logout(l -> l.logoutSuccessUrl("/"));
 
