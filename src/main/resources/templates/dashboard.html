@@ -6,8 +6,10 @@
 
 <form th:action="@{/ingest/preview}" method="post">
     <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
-    <button type="submit">Fetch 25 recent emails</button>
+    <label>After (YYYY/MM/DD): <input name="after" placeholder="2025/08/01"></label>
+    <button type="submit">Fetch & Save</button>
 </form>
-<pre th:if="${emails != null}" th:text="${emails}"></pre>
+
+<pre th:if="${payload != null}" th:text="${payload}"></pre>
 </body>
 </html>
