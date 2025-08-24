@@ -57,11 +57,19 @@ The goal is to give job seekers a clean dashboard — no more digging through in
 ---
 
 ## 📂 Project Structure
-- `domain/` → Entity classes (`User`, `Email`, `Application`, etc.)  
-- `repo/` → Spring Data JPA repositories  
-- `service/` → Business logic (Gmail integration, candidate email detection, LLM client)  
-- `controller/` → Web endpoints (login, dashboard, ingest)  
-- `resources/db/migration/` → Flyway SQL migrations  
+
+- `auth/` → Authentication entities & repositories (`User`, `OAuthToken`, `UserRepository`, `OAuthTokenRepository`)  
+- `config/` → Configuration beans (`GmailConfig`)  
+- `controller/` → Web controllers (`ApplicationController`, `DashboardController`, `HealthController`, `IngestController`)  
+- `domain/` → Core domain entities (`Application`, `Email`)  
+- `gmail/` → Gmail DTOs (`GmailMessage`)  
+- `repo/` → Spring Data JPA repositories (`ApplicationRepository`, `EmailRepository`)  
+- `security/` → Security setup (`SecurityConfig`, `CustomOAuth2SuccessHandler`)  
+- `service/` → Business logic (`GmailService`, `CandidateEmailService`, `LlmClient`)  
+- `utils/` → Application bootstrap (`EmailJobTrackerApplication`)  
+- `resources/db/migration/` → Flyway SQL migrations (`V1__init.sql`, `V2__add_gmail_id_internal_date.sql`, `V3__rename_due_date_add_trigger.sql`)  
+- `resources/static/` → Static assets (`index.html`)  
+- `resources/templates/` → Thymeleaf templates (`application.yml` for config)  
 
 ---
 
