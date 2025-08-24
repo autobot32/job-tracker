@@ -1,17 +1,24 @@
-package com.atakant.emailtracker.web;
+package com.atakant.emailtracker.controller;
 
+import com.atakant.emailtracker.auth.UserRepository;
+import com.atakant.emailtracker.auth.User;
+import com.atakant.emailtracker.domain.Email;
+import com.atakant.emailtracker.gmail.GmailMessage;
+import com.atakant.emailtracker.service.CandidateEmailService;
 import com.atakant.emailtracker.service.GmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 @Controller
 @RequestMapping("/ingest")
@@ -19,32 +26,44 @@ import java.time.ZoneOffset;
 public class IngestController {
 
     private final GmailService gmailService;
+    private final CandidateEmailService candidateEmailService;
+    private  final UserRepository userRepository;
 
-    @PostMapping("/preview") // reuse the existing button; now it also saves
-    public String fetchAndSave(Model model,
-                               @RequestParam(name = "after", required = false) String afterYyyyMmDd,
-                               Authentication authentication) {
-        String email = ((OAuth2User) authentication.getPrincipal()).getAttribute("email");
-        model.addAttribute("email", email);
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-        String after = (afterYyyyMmDd == null || afterYyyyMmDd.isBlank())
-                ? lastNDaysAsGmailDate(30)
-                : afterYyyyMmDd;
-
+    @PostMapping("/preview")
+    public String preview(Model model,
+                          @org.springframework.security.core.annotation.AuthenticationPrincipal OAuth2User principal,
+                          Authentication authentication,
+                          @RequestParam(name = "after", required = false) String afterStr) {
+        model.addAttribute("email", principal.getAttribute("email"));
         try {
-            var saved = gmailService.ingestAndSave(authentication, after);
-            model.addAttribute("payload", "Saved " + saved.size() + " emails since " + after + ".");
+            // 1) Fetch *all* Gmail since date AND persist
+            String afterArg = (afterStr == null || afterStr.isBlank()) ? null : afterStr.trim();
+            List<Email> ingested = gmailService.ingestAndSave(authentication, afterArg);
+
+            System.out.println("before resolve");
+            // 2) Resolve current user
+            UUID userId = resolveCurrentUserId(principal);
+
+            System.out.println("resolved before processing emails");
+            // 3) Extract over the EXACT list we just ingested (no artificial limit)
+            int saved = candidateEmailService.processEmails(userId, ingested);
+            System.out.println("processed emails");
+
+            model.addAttribute("payload",
+                    "Fetched & saved " + ingested.size() + " emails; saved " + saved + " applications.");
         } catch (Exception e) {
             model.addAttribute("payload", "Error: " + e.getMessage());
         }
         return "dashboard";
     }
 
-    private String lastNDaysAsGmailDate(int n) {
-        var cutoff = OffsetDateTime.now(ZoneOffset.UTC).minusDays(n);
-        return cutoff.getYear() + "/" +
-                String.format("%02d", cutoff.getMonthValue()) + "/" +
-                String.format("%02d", cutoff.getDayOfMonth());
+    private UUID resolveCurrentUserId(OAuth2User principal) {
+        String email = principal.getAttribute("email");
+        return userRepository.findByEmail(email)
+                .map(User::getId)
+                .orElseThrow(() -> new IllegalStateException("No user found for email: " + email));
     }
 }
 

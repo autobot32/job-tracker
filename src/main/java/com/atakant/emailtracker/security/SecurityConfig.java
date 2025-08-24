@@ -74,7 +74,6 @@ public class SecurityConfig {
                 )
                 .logout(l -> l.logoutSuccessUrl("/"));
 
-        // Do NOT declare your own OAuth2AuthorizedClientManager bean anywhere.
         return http.build();
     }
 }

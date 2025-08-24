@@ -5,17 +5,29 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.Instant;
+
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface EmailRepository extends JpaRepository<Email, UUID> {
 
-    // existing
+    // May be used later?
     Page<Email> findByUserIdOrderBySentAtDesc(UUID userId, Pageable pageable);
 
     boolean existsByUserIdAndMessageIdHash(UUID userId, String messageIdHash);
 
-    Optional<Email> findByUserIdAndMessageIdHash(UUID userId, String messageIdHash);
+    @Query("""
+        SELECT e FROM Email e
+        WHERE e.userId = :userId
+        ORDER BY e.sentAt DESC NULLS LAST
+    """)
+    List<Email> findRecentForUser(@Param("userId") UUID userId, org.springframework.data.domain.Pageable pageable);
+
+    default List<Email> findRecentForUser(UUID userId, int limit) {
+        return findRecentForUser(userId, org.springframework.data.domain.PageRequest.of(0, limit));
+    }
 
 }

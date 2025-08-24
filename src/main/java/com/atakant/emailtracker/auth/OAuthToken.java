@@ -10,13 +10,12 @@ import java.util.UUID;
 @Getter @Setter
 public class OAuthToken {
 
-    // PK is the same as users.id
     @Id
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
     @OneToOne(optional = false, fetch = FetchType.LAZY)
-    @MapsId // <-- shares PK with User.id; sets userId automatically
+    @MapsId
     @JoinColumn(name = "user_id")
     private User user;
 

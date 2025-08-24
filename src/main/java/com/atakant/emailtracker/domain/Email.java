@@ -34,7 +34,7 @@ public class Email {
     private String subject;
 
     @Column(name = "sent_at")
-    private Instant sentAt; // TIMESTAMPTZ <-> Instant
+    private Instant sentAt;
 
     @Column(name = "body_text", columnDefinition = "TEXT")
     private String bodyText;

@@ -7,11 +7,15 @@ import java.time.OffsetDateTime;
 
 public interface ApplicationRepository extends JpaRepository<Application, UUID> {
   List<Application> findByUserIdOrderByLastUpdatedAtDesc(UUID userId);
-  
+
+  // Potential use ?
   List<Application> findByUserIdAndNextDueAtBetweenOrderByNextDueAtAsc(
           UUID userId,
           OffsetDateTime start,
           OffsetDateTime end
   );
+
+  Optional<Application> findFirstByUserIdAndCompanyIgnoreCaseAndRoleTitleIgnoreCase(
+          UUID userId, String company, String roleTitle);
 
 }

@@ -34,9 +34,7 @@ public class GmailService {
     private final EmailRepository emailRepository;
     private final Gmail gmail;
 
-    /**
-     * Fetch Gmail messages since a given date (format YYYY/MM/DD).
-     */
+    // Fetch gmail messages since a given date
     public List<GmailMessage> fetchMessagesSince(Authentication authentication, String afterYyyyMmDd) throws Exception {
         final int pageSize = 25;
         final String query = "after:" + afterYyyyMmDd + " -in:chats";
@@ -103,21 +101,24 @@ public class GmailService {
         return results;
     }
 
-    /**
-     * Map DTOs to Email entities and persist them.
-     */
+    // Maps gmail message to unique user
     public List<Email> ingestAndSave(Authentication authentication, String afterYyyyMmDd) throws Exception {
         OAuth2User principal = (OAuth2User) authentication.getPrincipal();
         User user = userRepository.findByEmail(principal.getAttribute("email"))
                 .orElseThrow(() -> new IllegalStateException("User not found"));
 
         List<GmailMessage> dtos = fetchMessagesSince(authentication, afterYyyyMmDd);
-        List<Email> emails = new ArrayList<>(dtos.size());
+        List<Email> saved = new ArrayList<>();
 
         for (GmailMessage g : dtos) {
             String msgIdHash = (g.rfc822MessageId() != null && !g.rfc822MessageId().isBlank())
                     ? g.rfc822MessageId()
                     : g.gmailId();
+
+            // 💡 check if this (user, messageIdHash) already exists
+            if (emailRepository.existsByUserIdAndMessageIdHash(user.getId(), msgIdHash)) {
+                continue;
+            }
 
             Email e = Email.builder()
                     .userId(user.getId())
@@ -133,11 +134,9 @@ public class GmailService {
                     .rawLabel(String.join(",", g.labels()))
                     .build();
 
-            emails.add(e);
+            saved.add(emailRepository.save(e));
         }
-
-        emailRepository.saveAll(emails);
-        return emails;
+        return saved;
     }
 
     private Map<String, String> loadLabelNameMap() throws Exception {
