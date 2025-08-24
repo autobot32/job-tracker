@@ -1,43 +1,88 @@
 # 📧 Email Job Tracker
 
-⚠️ **Work In Progress**  
-This project is currently under active development. Features may be incomplete or buggy, and the app is not yet ready for production use.  
+> [!WARNING]
+> This project is under **active development**. Features may be incomplete, buggy, or subject to change. Use at your own risk.
 
 ---
 
-## 🔍 What Is This?
+## Overview
 
-Email Job Tracker is a backend application that connects to your Gmail inbox, fetches recent emails, and (eventually) uses an LLM to extract job application data — such as company names, positions, deadlines, and contact info — and stores it in a structured database.  
+**Email Job Tracker** is a Spring Boot + PostgreSQL application that helps you automatically track job applications straight from your Gmail inbox.  
 
-It aims to give users a simple dashboard to track their job hunt without relying on messy spreadsheets or buried emails.  
+- Connect your Gmail account with **Google OAuth2**  
+- Fetch and store job-related emails in a structured database  
+- Use an **LLM parser** (coming soon) to extract details like:  
+  - Company  
+  - Role / Title  
+  - Status (applied, interview, offer, etc.)  
+  - Next steps and deadlines  
+  - Notes and referrals  
+
+The goal is to give job seekers a clean dashboard — no more digging through inboxes or messy spreadsheets.
 
 ---
 
-## 🚧 Project Scope
+## Project Status
 
-### ✅ Core Features (Working)
+### ✅ Working
 - Google OAuth2 login  
 - Gmail API integration (read-only)  
-- Email fetching  
-- PostgreSQL integration via Docker  
-- Entities for Users, Emails, Applications, Tasks, and Contacts  
+- Email fetching + persistence  
+- PostgreSQL via Docker Compose  
+- Flyway migrations  
+- Entities: Users, Emails, Applications, Tasks, Contacts  
 
 ### 🔄 In Progress
-- LLM parsing of emails  
-- Application tracking UI  
-- Task management and contact linking  
+- LLM-powered email parsing  
+- Application upsert logic (deduplication + status updates)  
+- Basic dashboard UI (Thymeleaf)  
 
 ### 🧠 Planned
 - Google Sheets export  
 - React frontend  
-- Analytics on job application progress  
+- Application analytics & insights  
+- Task management (follow-ups, interviews, etc.)  
 
 ---
 
 ## 🛠 Tech Stack
-- Java 21  
-- Spring Boot  
-- PostgreSQL  
-- Flyway  
-- Gmail API  
-- OAuth2  
+
+- **Language:** Java 21  
+- **Framework:** Spring Boot 3  
+- **Database:** PostgreSQL (Dockerized)  
+- **Migrations:** Flyway  
+- **Auth & APIs:** Google OAuth2, Gmail API  
+- **UI:** Thymeleaf (for now; React planned)  
+
+---
+
+## 📂 Project Structure
+- `domain/` → Entity classes (`User`, `Email`, `Application`, etc.)  
+- `repo/` → Spring Data JPA repositories  
+- `service/` → Business logic (Gmail integration, candidate email detection, LLM client)  
+- `controller/` → Web endpoints (login, dashboard, ingest)  
+- `resources/db/migration/` → Flyway SQL migrations  
+
+---
+
+## 🚀 Getting Started
+
+1. **Clone the repo**  
+   ```bash
+   git clone https://github.com/autobot32/job-tracker.git
+   cd job-tracker
+
+2. **Run PostgreSQL via Docker**  
+   ```bash
+   docker-compose up -d
+3. **Configure Google Console and OAuth2**
+   - Set up a project in [Google Cloud Console](https://console.cloud.google.com)
+   - Enable the **Gmail API**
+   - Configure the **OAuth consent screen**
+   - Create OAuth2 credentials (Client ID & Secret)
+   - Add your credentials to `application.properties`
+
+5. **Build and Run**  
+   ```bash
+   ./mvnw spring-boot:run
+
