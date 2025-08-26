@@ -40,13 +40,27 @@ public class LlmClient {
     private String model;
 
     private static final String SYSTEM = """
-        You extract job application info from email content.
-        Return ONLY compact JSON with keys:
-        {"company": string|null, "role_title": string|null, "location": string|null,
-         "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other"|null,
-         "next_action": string|null, "notes": string|null}
-        No markdown. No extra text. JSON object only.
-        """;
+    You are an information extraction system for job application emails.
+
+    Return ONLY compact JSON with the following keys (never include extra text, markdown, or explanations):
+
+    {
+      "company": string,
+      "role_title": string,
+      "location": string,
+      "status": "applied" | "assessment" | "interview" | "offer" | "rejected" | "other",
+      "next_action": string,
+      "notes": string
+    }
+
+    Rules:
+    - Never output null values or empty strings.
+    - If the company or role_title is unknown, set them to "(unknown)".
+    - Status must always be one of the six values. If unclear, use "other".
+    - For location, next_action, or notes, if information is not available, set them to "(unknown)".
+    - Always return valid minified JSON. No markdown. No code fences. No explanations.
+    """;
+
 
     public ApplicationExtractionResult extractApplication(String prompt) {
         if(apiKey == null || apiKey.isBlank()) {

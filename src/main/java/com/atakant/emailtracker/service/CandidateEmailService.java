@@ -6,6 +6,7 @@ import com.atakant.emailtracker.domain.Email;
 import com.atakant.emailtracker.domain.Application;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -32,44 +33,41 @@ public class CandidateEmailService {
     @Transactional
     public int processEmails(UUID userId, List<Email> emails) {
         int processed = 0, saved = 0, skippedNonJob = 0, skippedMissing = 0, failed = 0;
-
         System.out.println("Processing " + emails.size() + " emails");
         for (Email e : emails) {
             System.out.println("entered");
             if (!looksLikeCandidate(e)) continue;
-
             var parsed = llm.extractApplication(buildPrompt(e));
             if (parsed == null) {
                 continue;
             }
-
             if (isBlank(parsed.getCompany()) || isBlank(parsed.getRoleTitle())) {
 
                 skippedMissing++;
                 continue;
             }
-
-            // ---- Save with per-row protection so one failure doesn't roll back all ----
             try {
-                upsertApplication(userId, e.getId(), parsed);  // make sure this doesn't set null role_title
+                upsertOne(userId, e.getId(), parsed);
                 saved++;
                 System.out.println("processed an email");
             } catch (org.springframework.dao.DataIntegrityViolationException ex) {
                 failed++;
-                // keep going; don’t let one record kill the batch
                 System.err.println("Failed to save application for email " + e.getId() + ": " + ex.getMessage());
             }
-
             processed++;
         }
-
         System.out.printf("apps: saved=%d, skippedNonJob=%d, skippedMissing=%d, failed=%d%n",
                 saved, skippedNonJob, skippedMissing, failed);
-
         return processed;
     }
 
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void upsertOne(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult parsed) {
+        upsertApplication(userId, emailId, parsed);
+    }
+
 
     private boolean looksLikeCandidate(Email e) {
         String hay = ((e.getSubject() == null ? "" : e.getSubject()) + " " +
@@ -90,19 +88,31 @@ public class CandidateEmailService {
 
     private String buildPrompt(Email e) {
         String subject = e.getSubject() == null ? "" : e.getSubject();
-        String body = e.getBodyText() == null ? "" : e.getBodyText();
-        if (body.length() > 4000) body = body.substring(0, 4000); // keep it cheap
+        String from    = e.getFromAddr() == null ? "" : e.getFromAddr();
+        String body    = e.getBodyText() == null ? "" : e.getBodyText();
 
         return """
-        You extract job application info from emails. Return ONLY minified JSON exactly like:
-        {"company": "...", "role_title": "...", "location": null, "status": "applied|assessment|interview|offer|rejected|other|null", "next_action": null, "notes": null}
-
+        Extract job-application info from the email below and return ONLY a single **minified** JSON object.
+        Keys (all REQUIRED, never null/empty):
+        {
+          "company": string,                // use "(unknown)" if unsure
+          "role_title": string,             // use "(unknown)" if unsure
+          "location": string,               // use "(unknown)" if missing
+          "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // pick "other" if unclear
+          "next_action": string,            // use "(unknown)" if missing
+          "notes": string                   // brief summary or "(unknown)"
+        }
+        Rules:
+        - No markdown, no code fences, no extra text before/after the JSON.
+        - Output must be valid JSON on one line (minified).
+        
         SUBJECT: %s
         FROM: %s
         BODY:
         %s
-        """.formatted(subject, e.getFromAddr(), body);
+        """.formatted(subject, from, body);
     }
+
 
     private static String safe(String s) { return (s == null || s.isBlank()) ? null : s.trim(); }
 
