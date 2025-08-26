@@ -6,6 +6,10 @@ logging:
     org.springframework.web.client: DEBUG
     org.springframework.security: DEBUG
 
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}
+  model: gpt-5-nano
 
 spring:
   datasource:

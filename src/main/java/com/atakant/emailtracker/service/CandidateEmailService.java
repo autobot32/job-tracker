@@ -31,18 +31,45 @@ public class CandidateEmailService {
 
     @Transactional
     public int processEmails(UUID userId, List<Email> emails) {
-        int processed = 0;
+        int processed = 0, saved = 0, skippedNonJob = 0, skippedMissing = 0, failed = 0;
+
+        System.out.println("Processing " + emails.size() + " emails");
         for (Email e : emails) {
             System.out.println("entered");
             if (!looksLikeCandidate(e)) continue;
-            var x = llm.extractApplication(buildPrompt(e));
-            if (x == null) continue;
-            upsertApplication(userId, e.getId(), x);
+
+            var parsed = llm.extractApplication(buildPrompt(e));
+            if (parsed == null) {
+                continue;
+            }
+
+            if (isBlank(parsed.getCompany()) || isBlank(parsed.getRoleTitle())) {
+
+                skippedMissing++;
+                continue;
+            }
+
+            // ---- Save with per-row protection so one failure doesn't roll back all ----
+            try {
+                upsertApplication(userId, e.getId(), parsed);  // make sure this doesn't set null role_title
+                saved++;
+                System.out.println("processed an email");
+            } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+                failed++;
+                // keep going; don’t let one record kill the batch
+                System.err.println("Failed to save application for email " + e.getId() + ": " + ex.getMessage());
+            }
+
             processed++;
-            System.out.println("processed an email");
         }
+
+        System.out.printf("apps: saved=%d, skippedNonJob=%d, skippedMissing=%d, failed=%d%n",
+                saved, skippedNonJob, skippedMissing, failed);
+
         return processed;
     }
+
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     private boolean looksLikeCandidate(Email e) {
         String hay = ((e.getSubject() == null ? "" : e.getSubject()) + " " +
