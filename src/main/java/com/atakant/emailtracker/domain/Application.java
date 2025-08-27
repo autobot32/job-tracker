@@ -49,6 +49,9 @@ public class Application {
 
   private String notes;
 
+  @Column(name = "is_application", nullable = false)
+  private boolean isApplication = true;
+
   @PrePersist
   void onCreate() {
     if (id == null) id = UUID.randomUUID();

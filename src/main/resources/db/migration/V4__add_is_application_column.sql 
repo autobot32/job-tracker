@@ -1,0 +1,2 @@
+ALTER TABLE applications
+ADD COLUMN is_application BOOLEAN DEFAULT TRUE NOT NULL;

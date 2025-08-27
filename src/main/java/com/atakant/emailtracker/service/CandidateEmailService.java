@@ -92,26 +92,43 @@ public class CandidateEmailService {
         String body    = e.getBodyText() == null ? "" : e.getBodyText();
 
         return """
-        Extract job-application info from the email below and return ONLY a single **minified** JSON object.
-        Keys (all REQUIRED, never null/empty):
-        {
-          "company": string,                // use "(unknown)" if unsure
-          "role_title": string,             // use "(unknown)" if unsure
-          "location": string,               // use "(unknown)" if missing
-          "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // pick "other" if unclear
-          "next_action": string,            // use "(unknown)" if missing
-          "notes": string                   // brief summary or "(unknown)"
-        }
-        Rules:
-        - No markdown, no code fences, no extra text before/after the JSON.
-        - Output must be valid JSON on one line (minified).
+            Extract job-application info from the email below and return ONLY a SINGLE compact, MINIFIED JSON object.
+            The JSON MUST contain exactly these keys (all REQUIRED, never null/empty):
         
-        SUBJECT: %s
-        FROM: %s
-        BODY:
-        %s
-        """.formatted(subject, from, body);
+            {
+              "is_application": boolean,           // true if this email is about the user's application lifecycle, false otherwise
+              "company": string,                   // "(unknown)" if unsure
+              "role_title": string,                // "(unknown)" if unsure
+              "location": string,                  // "(unknown)" if missing
+              "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // use "other" if unclear
+              "next_action": string,               // "(unknown)" if missing
+              "notes": string                      // brief summary or reason; never empty
+            }
+        
+            CLASSIFICATION RULES:
+            - If the email is directly about the user's OWN application lifecycle (thank-you, applied, status update, assessment/OA, interview, offer, rejection, portal updates), then "is_application" must be true — even if some fields are unknown.
+            - If it is a newsletter, referral campaign, mentorship, event/community email, marketing, or anything not about the user's candidacy, set "is_application" to false.
+        
+            EXTRACTION RULES:
+            - Never output null or empty strings — use "(unknown)" when needed.
+            - Prefer role/company from the SUBJECT or explicit "Thank you for applying to..." lines.
+            - Do not infer role from sender signatures (e.g., "Senior SDE" in a signature is not the user's role).
+            - Only extract actual job location (like "United States (Remote)", "Seattle, WA"). Ignore addresses in footers.
+            - Status must always be one of the six values.
+            - Next action should be the most concrete required step for the user ("schedule interview", "complete OA", or "(unknown)" if none).
+            - Notes should be short, 1–2 phrases: e.g., "application received", "OA invitation", "interview scheduled", "rejection", "mentorship pairing".
+        
+            FORMAT:
+            - Output valid minified JSON only.
+            - No markdown, no code fences, no explanations.
+        
+            SUBJECT: %s
+            FROM: %s
+            BODY:
+            %s
+            """.formatted(subject, from, body);
     }
+
 
 
     private static String safe(String s) { return (s == null || s.isBlank()) ? null : s.trim(); }

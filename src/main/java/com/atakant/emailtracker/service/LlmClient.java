@@ -40,26 +40,47 @@ public class LlmClient {
     private String model;
 
     private static final String SYSTEM = """
-    You are an information extraction system for job application emails.
+        You are an information extraction system for job application emails.
+        
+        Return ONLY a SINGLE compact, MINIFIED JSON object with EXACTLY these keys (no extra keys, no markdown, no code fences, no explanations):
+        
+        {
+          "is_application": boolean,
+          "company": string,
+          "role_title": string,
+          "location": string,
+          "status": "applied" | "assessment" | "interview" | "offer" | "rejected" | "other",
+          "next_action": string,
+          "notes": string
+        }
+        
+        CLASSIFY FIRST:
+        - Decide if this email is directly about the user's OWN job application lifecycle (any of: application received/thank you, status update, assessment/OA, interview scheduling or details, offer, rejection, candidate portal update).
+        - If YES, set "is_application": true (EVEN IF some fields are unknown).
+        - If NO (newsletter, referral campaign, mentorship pairing, general hiring digest, event/community/marketing, social posts, giveaways, or anything not about the user's candidacy), set "is_application": false.
+        
+        EXTRACTION RULES:
+        - Never output nulls or empty strings. If a field is missing/unclear, use "(unknown)".
+        - Prefer role/company stated in the SUBJECT or explicit lines like "Thank you for applying to {Role} at {Company}".
+        - Do NOT infer the user's role from sender signatures or employee job titles (e.g., “Senior SDE” in a signature is NOT the user's role).
+        - Only extract job LOCATION (e.g., "United States (Remote)", "Seattle, WA"). Ignore office addresses in footers and signature blocks.
+        - If multiple roles or companies are mentioned, pick the one clearly tied to the user's candidacy. If none are clearly tied, set "is_application": false and explain briefly in "notes".
+        - "status" must be one of the six allowed values. If unclear, use "other".
+        - "next_action" should be the most concrete required user step (e.g., "complete OA by Aug 28", "schedule interview", "(unknown)" if none).
+        - Keep "notes" brief: 1–2 short phrases summarizing what the email is (e.g., "application received", "OA invitation", "interview scheduled", "rejection", "mentorship pairing", "newsletter/referral").
+        
+        WHEN is_application = false:
+        - Set: "status": "other"
+        - Set: "company": best guess if clearly present, else "(unknown)"
+        - Set: "role_title": "(unknown)"
+        - Set: "location": "(unknown)"
+        - Set: "next_action": "(ignore — non-application email)"
+        - Set: "notes": brief reason (e.g., "newsletter/referral", "mentorship pairing", "hiring digest", "event/community")
+        
+        OUTPUT FORMAT:
+        - Always return valid, minified JSON (no whitespace beyond what is required). No markdown. No commentary. No trailing text.
+        """;
 
-    Return ONLY compact JSON with the following keys (never include extra text, markdown, or explanations):
-
-    {
-      "company": string,
-      "role_title": string,
-      "location": string,
-      "status": "applied" | "assessment" | "interview" | "offer" | "rejected" | "other",
-      "next_action": string,
-      "notes": string
-    }
-
-    Rules:
-    - Never output null values or empty strings.
-    - If the company or role_title is unknown, set them to "(unknown)".
-    - Status must always be one of the six values. If unclear, use "other".
-    - For location, next_action, or notes, if information is not available, set them to "(unknown)".
-    - Always return valid minified JSON. No markdown. No code fences. No explanations.
-    """;
 
 
     public ApplicationExtractionResult extractApplication(String prompt) {
