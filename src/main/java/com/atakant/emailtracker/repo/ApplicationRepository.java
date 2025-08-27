@@ -18,4 +18,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID> 
   Optional<Application> findFirstByUserIdAndCompanyIgnoreCaseAndRoleTitleIgnoreCase(
           UUID userId, String company, String roleTitle);
 
+  Optional<Application> findByUserIdAndNormalizedCompanyAndNormalizedRoleTitle(
+          UUID userId, String normalizedCompany, String normalizedRoleTitle);
+
 }

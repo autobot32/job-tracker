@@ -4,9 +4,11 @@ import com.atakant.emailtracker.repo.EmailRepository;
 import com.atakant.emailtracker.repo.ApplicationRepository;
 import com.atakant.emailtracker.domain.Email;
 import com.atakant.emailtracker.domain.Application;
+
+import com.atakant.emailtracker.utils.AppNorm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -32,41 +34,82 @@ public class CandidateEmailService {
 
     @Transactional
     public int processEmails(UUID userId, List<Email> emails) {
-        int processed = 0, saved = 0, skippedNonJob = 0, skippedMissing = 0, failed = 0;
-        System.out.println("Processing " + emails.size() + " emails");
+        int processed = 0, saved = 0, skippedNonJob = 0, failed = 0;
         for (Email e : emails) {
-            System.out.println("entered");
-            if (!looksLikeCandidate(e)) continue;
-            var parsed = llm.extractApplication(buildPrompt(e));
-            if (parsed == null) {
-                continue;
-            }
-            if (isBlank(parsed.getCompany()) || isBlank(parsed.getRoleTitle())) {
 
-                skippedMissing++;
+            if (!looksLikeCandidate(e)) continue;
+
+            var parsed = llm.extractApplication(buildPrompt(e));
+            if (parsed == null) continue;
+
+            if (!parsed.isApplication()) {
+                skippedNonJob++;
                 continue;
             }
+
             try {
-                upsertOne(userId, e.getId(), parsed);
+                upsertApplication(userId, e.getId(), parsed);
                 saved++;
-                System.out.println("processed an email");
             } catch (org.springframework.dao.DataIntegrityViolationException ex) {
                 failed++;
                 System.err.println("Failed to save application for email " + e.getId() + ": " + ex.getMessage());
             }
             processed++;
         }
-        System.out.printf("apps: saved=%d, skippedNonJob=%d, skippedMissing=%d, failed=%d%n",
-                saved, skippedNonJob, skippedMissing, failed);
+        System.out.printf("apps: saved=%d, skippedNonJob=%d, failed=%d%n", saved, skippedNonJob, failed);
         return processed;
     }
 
-    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
+    private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
+        String normCo   = AppNorm.normCompany(x.getCompany());
+        String normRole = AppNorm.normRole(x.getRoleTitle());
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void upsertOne(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult parsed) {
-        upsertApplication(userId, emailId, parsed);
+        Application existing = appRepo
+                .findByUserIdAndNormalizedCompanyAndNormalizedRoleTitle(userId, normCo, normRole)
+                .orElse(null);
+
+        if (existing == null) {
+            Application a = new Application();
+            a.setId(UUID.randomUUID());
+            a.setUserId(userId);
+            a.setCompany(emptyToUnknown(x.getCompany()));                // keep raw values, even "(unknown)"
+            a.setRoleTitle(emptyToUnknown(x.getRoleTitle()));
+            a.setNormalizedCompany(normCo);
+            a.setNormalizedRoleTitle(normRole);
+            a.setLocation(emptyToUnknown(x.getLocation()));
+            a.setStatus(emptyToUnknown(x.getStatus()));                  // “applied/assessment/interview/offer/rejected/other”
+            a.setNextStep(emptyToUnknown(x.getNextAction()));
+            a.setNotes(emptyToUnknown(x.getNotes()));
+            a.setApplication(true);
+            a.setSourceEmailId(emailId);
+            a.setFirstSeenAt(OffsetDateTime.now());
+            a.setLastUpdatedAt(OffsetDateTime.now());
+            appRepo.save(a);
+            return;
+        }
+
+        boolean dirty = false;
+        String finalStatus = AppNorm.promoteStatus(existing.getStatus(), x.getStatus());
+        dirty |= merge(existing::getStatus, existing::setStatus, finalStatus);
+
+        dirty |= merge(existing::getCompany, existing::setCompany, emptyToUnknown(x.getCompany()));
+        dirty |= merge(existing::getRoleTitle, existing::setRoleTitle, emptyToUnknown(x.getRoleTitle()));
+        dirty |= merge(existing::getLocation, existing::setLocation, AppNorm.mergeLocation(existing.getLocation(), emptyToUnknown(x.getLocation())));
+        dirty |= merge(existing::getNextStep, existing::setNextStep, emptyToUnknown(x.getNextAction()));
+        dirty |= merge(existing::getNotes, existing::setNotes, AppNorm.mergeNotes(existing.getNotes(), emptyToUnknown(x.getNotes())));
+
+        if (existing.getSourceEmailId() == null) { existing.setSourceEmailId(emailId); dirty = true; }
+
+        if (dirty) {
+            existing.setLastUpdatedAt(OffsetDateTime.now());
+            appRepo.save(existing);
+        }
     }
+
+    private static String emptyToUnknown(String s) {
+        return (s == null || s.isBlank()) ? "(unknown)" : s.trim();
+    }
+
 
 
     private boolean looksLikeCandidate(Email e) {
@@ -129,10 +172,6 @@ public class CandidateEmailService {
             """.formatted(subject, from, body);
     }
 
-
-
-    private static String safe(String s) { return (s == null || s.isBlank()) ? null : s.trim(); }
-
     private boolean merge(Supplier<String> getter, Consumer<String> setter, String newValue) {
         if (newValue == null || newValue.isBlank()) return false;
         if (!Objects.equals(getter.get(), newValue)) {
@@ -141,43 +180,4 @@ public class CandidateEmailService {
         }
         return false;
     }
-
-
-    private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
-        Application existing = appRepo
-                .findFirstByUserIdAndCompanyIgnoreCaseAndRoleTitleIgnoreCase(
-                        userId, safe(x.getCompany()), safe(x.getRoleTitle()))
-                .orElse(null);
-
-        if (existing == null) {
-            Application a = new Application();
-            a.setId(UUID.randomUUID());
-            a.setUserId(userId);
-            a.setCompany(safe(x.getCompany()));
-            a.setRoleTitle(safe(x.getRoleTitle()));
-            a.setLocation(safe(x.getLocation()));
-            a.setStatus(safe(x.getStatus()));
-            a.setNextStep(safe(x.getNextAction()));
-            a.setNotes(safe(x.getNotes()));
-            a.setFirstSeenAt(OffsetDateTime.now());
-            a.setSourceEmailId(emailId);
-            a.setLastUpdatedAt(OffsetDateTime.now());
-            appRepo.save(a);
-        } else {
-            boolean dirty = false;
-            dirty |= merge(existing::getLocation, existing::setLocation, x.getLocation());
-            dirty |= merge(existing::getStatus, existing::setStatus, x.getStatus());
-            dirty |= merge(existing::getNextStep, existing::setNextStep, x.getNextAction());
-            dirty |= merge(existing::getNotes, existing::setNotes, x.getNotes());
-            if (existing.getSourceEmailId() == null) {
-                existing.setSourceEmailId(emailId);
-                dirty = true;
-            }
-            if (dirty) {
-                existing.setLastUpdatedAt(OffsetDateTime.now());
-                appRepo.save(existing);
-            }
-        }
-    }
-
 }

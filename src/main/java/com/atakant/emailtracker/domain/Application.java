@@ -52,6 +52,12 @@ public class Application {
   @Column(name = "is_application", nullable = false)
   private boolean isApplication = true;
 
+  @Column(name = "normalized_company")
+  private String normalizedCompany;
+
+  @Column(name = "normalized_role_title")
+  private String normalizedRoleTitle;
+
   @PrePersist
   void onCreate() {
     if (id == null) id = UUID.randomUUID();

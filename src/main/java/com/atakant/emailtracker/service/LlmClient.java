@@ -174,6 +174,8 @@ public class LlmClient {
     @Getter
     @Setter
     public static class ApplicationExtractionResult {
+        @JsonProperty("is_application")
+        private boolean isApplication;
         private String company;
 
         @JsonProperty("role_title")
