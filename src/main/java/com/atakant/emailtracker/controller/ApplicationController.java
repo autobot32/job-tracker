@@ -7,6 +7,10 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/applications")
+@CrossOrigin(origins = {
+        "http://localhost:5173",
+        "http://localhost:3000"
+})
 public class ApplicationController {
   private final ApplicationRepository repo;
   public ApplicationController(ApplicationRepository repo) { this.repo = repo; }
@@ -22,4 +26,10 @@ public class ApplicationController {
     a.setLastUpdatedAt(java.time.OffsetDateTime.now());
     return repo.save(a);
   }
+
+  @GetMapping("/all")
+  public List<Application> listAll() {
+    return repo.findAll();
+  }
+
 }
