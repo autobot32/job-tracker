@@ -1,0 +1,40 @@
+# ------------------------------
+# Backend (Spring Boot / Maven)
+# ------------------------------
+server/target/
+server/.env
+*.log
+
+# IntelliJ / IDE
+*.iml
+.idea/
+server/.idea/
+
+# ------------------------------
+# Frontend (Vite / React / Node)
+# ------------------------------
+client/node_modules/
+client/dist/
+client/dist-ssr/
+client/.vite/
+client/.eslintcache
+
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------
+# Editor / OS
+# ------------------------------
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
