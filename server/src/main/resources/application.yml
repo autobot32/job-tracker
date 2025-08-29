@@ -5,6 +5,8 @@ logging:
   level:
     org.springframework.web.client: DEBUG
     org.springframework.security: DEBUG
+    org.springframework.security.oauth2: TRACE
+    org.springframework.web.client.RestTemplate: DEBUG
 
 openai:
   api:
@@ -27,7 +29,7 @@ spring:
     prefix: classpath:/templates/
     suffix: .html
   config:
-    import: optional:file:.env[.properties]
+    import: optional:file:server/.env[.properties]
 
   security:
     oauth2:
@@ -36,12 +38,14 @@ spring:
           google:
             client-id: 848707604002-53qv6heps2cl7mrd704svikfon4rklcn.apps.googleusercontent.com
             client-secret: ${GOOGLE_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
             scope:
               - openid
               - email
               - profile
               - https://www.googleapis.com/auth/gmail.readonly
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            client-authentication-method: client_secret_post
         provider:
           google:
             authorization-uri: https://accounts.google.com/o/oauth2/v2/auth

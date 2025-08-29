@@ -2,8 +2,10 @@ package com.atakant.emailtracker.security;
 
 import java.util.Set;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +26,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private final CustomOAuth2SuccessHandler successHandler;
+
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, ClientRegistrationRepository clients) throws Exception {
@@ -66,14 +69,21 @@ public class SecurityConfig {
         http
                 .cors(c -> {})
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/health").permitAll()
+                        .requestMatchers(
+                                "/", "/index.html", "/css/**", "/js/**",
+                                "/health", "/error", "/favicon.ico",
+                                "/login/**", "/oauth2/**"
+                        ).permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll() // CORS preflight
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/applications").authenticated()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth -> oauth
-                                .authorizationEndpoint(ep -> ep.authorizationRequestResolver(loggingResolver))
-                                .successHandler(successHandler)
+                        .authorizationEndpoint(ep -> ep.authorizationRequestResolver(loggingResolver))
+                        .successHandler(successHandler)
                 )
                 .logout(l -> l.logoutSuccessUrl("/"));
+
 
         return http.build();
     }
@@ -90,7 +100,6 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", cfg);
         return source;
     }
-
 }
 
 

@@ -38,21 +38,19 @@ public class IngestController {
                           @RequestParam(name = "after", required = false) String afterStr) {
         model.addAttribute("email", principal.getAttribute("email"));
         try {
-            // 1) Fetch *all* Gmail since date AND persist
             String afterArg = (afterStr == null || afterStr.isBlank()) ? null : afterStr.trim();
             List<Email> ingested = gmailService.ingestAndSave(authentication, afterArg);
 
-            System.out.println("before resolve");
-            // 2) Resolve current user
             UUID userId = resolveCurrentUserId(principal);
 
-            System.out.println("resolved before processing emails");
-            // 3) Extract over the EXACT list we just ingested (no artificial limit)
             int saved = candidateEmailService.processEmails(userId, ingested);
+
             System.out.println("processed emails");
 
             model.addAttribute("payload",
                     "Fetched & saved " + ingested.size() + " emails; saved " + saved + " applications.");
+
+            return "redirect:http://localhost:5173/applications";
         } catch (Exception e) {
             model.addAttribute("payload", "Error: " + e.getMessage());
         }
