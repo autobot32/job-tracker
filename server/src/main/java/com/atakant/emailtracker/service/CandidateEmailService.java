@@ -61,8 +61,14 @@ public class CandidateEmailService {
     }
 
     private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
-        String normCo   = AppNorm.normCompany(x.getCompany());
-        String normRole = AppNorm.normRole(x.getRoleTitle());
+        // Prefer LLM-normalized keys; fallback to AppNorm for safety
+        String normCo = (x.getNormalizedCompany() != null && !x.getNormalizedCompany().isBlank())
+                ? x.getNormalizedCompany().trim()
+                : AppNorm.normCompany(x.getCompany());
+
+        String normRole = (x.getNormalizedRoleTitle() != null && !x.getNormalizedRoleTitle().isBlank())
+                ? x.getNormalizedRoleTitle().trim()
+                : AppNorm.normRole(x.getRoleTitle());
 
         Application existing = appRepo
                 .findByUserIdAndNormalizedCompanyAndNormalizedRoleTitle(userId, normCo, normRole)
@@ -72,12 +78,12 @@ public class CandidateEmailService {
             Application a = new Application();
             a.setId(UUID.randomUUID());
             a.setUserId(userId);
-            a.setCompany(emptyToUnknown(x.getCompany()));                // keep raw values, even "(unknown)"
+            a.setCompany(emptyToUnknown(x.getCompany()));
             a.setRoleTitle(emptyToUnknown(x.getRoleTitle()));
             a.setNormalizedCompany(normCo);
             a.setNormalizedRoleTitle(normRole);
             a.setLocation(emptyToUnknown(x.getLocation()));
-            a.setStatus(emptyToUnknown(x.getStatus()));                  // “applied/assessment/interview/offer/rejected/other”
+            a.setStatus(emptyToUnknown(x.getStatus()));
             a.setNextStep(emptyToUnknown(x.getNextAction()));
             a.setNotes(emptyToUnknown(x.getNotes()));
             a.setApplication(true);
@@ -89,14 +95,23 @@ public class CandidateEmailService {
         }
 
         boolean dirty = false;
+
+        // Promote status (never downgrade). “other” won’t override applied/interview/etc.
         String finalStatus = AppNorm.promoteStatus(existing.getStatus(), x.getStatus());
         dirty |= merge(existing::getStatus, existing::setStatus, finalStatus);
 
         dirty |= merge(existing::getCompany, existing::setCompany, emptyToUnknown(x.getCompany()));
         dirty |= merge(existing::getRoleTitle, existing::setRoleTitle, emptyToUnknown(x.getRoleTitle()));
-        dirty |= merge(existing::getLocation, existing::setLocation, AppNorm.mergeLocation(existing.getLocation(), emptyToUnknown(x.getLocation())));
+
+        // Keep normalized keys stable if LLM gives them
+        dirty |= merge(existing::getNormalizedCompany, existing::setNormalizedCompany, normCo);
+        dirty |= merge(existing::getNormalizedRoleTitle, existing::setNormalizedRoleTitle, normRole);
+
+        dirty |= merge(existing::getLocation, existing::setLocation,
+                AppNorm.mergeLocation(existing.getLocation(), emptyToUnknown(x.getLocation())));
         dirty |= merge(existing::getNextStep, existing::setNextStep, emptyToUnknown(x.getNextAction()));
-        dirty |= merge(existing::getNotes, existing::setNotes, AppNorm.mergeNotes(existing.getNotes(), emptyToUnknown(x.getNotes())));
+        dirty |= merge(existing::getNotes, existing::setNotes,
+                AppNorm.mergeNotes(existing.getNotes(), emptyToUnknown(x.getNotes())));
 
         if (existing.getSourceEmailId() == null) { existing.setSourceEmailId(emailId); dirty = true; }
 
@@ -106,10 +121,56 @@ public class CandidateEmailService {
         }
     }
 
+
     private static String emptyToUnknown(String s) {
         return (s == null || s.isBlank()) ? "(unknown)" : s.trim();
     }
 
+    private String buildPrompt(Email e) {
+        String subject = e.getSubject() == null ? "" : e.getSubject();
+        String from    = e.getFromAddr() == null ? "" : e.getFromAddr();
+        String body    = e.getBodyText() == null ? "" : e.getBodyText();
+
+        return """
+        Extract job-application info from the email below and return ONLY a SINGLE compact, MINIFIED JSON object.
+        The JSON MUST contain exactly these keys (all REQUIRED, never null/empty):
+    
+        {
+          "is_application": boolean,           // true if this email is about the user's application lifecycle, false otherwise
+          "company": string,                   // "(unknown)" if unsure
+          "role_title": string,                // "(unknown)" if unsure
+          "location": string,                  // "(unknown)" if missing
+          "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // use "other" if unclear
+          "next_action": string,               // "(unknown)" if missing
+          "notes": string                      // brief summary or reason; never empty
+        }
+    
+        CLASSIFICATION RULES:
+        - If the email is directly about the user's OWN application lifecycle (thank-you, applied, status update, assessment/OA, interview, offer, rejection, portal updates), then "is_application" must be true — even if some fields are unknown.
+        - If it is a newsletter, referral campaign, mentorship, event/community email, marketing, or anything not about the user's candidacy, set "is_application" to false.
+    
+        EXTRACTION RULES:
+        - Never output null or empty strings — use "(unknown)" when needed.
+        - Prefer role/company from the SUBJECT or explicit "Thank you for applying to..." lines.
+        - Do not infer role from sender signatures (e.g., "Senior SDE" in a signature is not the user's role).
+        - Only extract actual job location (like "United States (Remote)", "Seattle, WA"). Ignore addresses in footers.
+        - Status must always be one of the six values.
+        - Next action should be the most concrete required step for the user ("schedule interview", "complete OA", or "(unknown)" if none).
+        - Notes should be short, 1–2 phrases: e.g., "application received", "OA invitation", "interview scheduled", "rejection", "mentorship pairing".
+        
+        - IMPORTANT: Do NOT mark "assessment" unless the candidate is asked to take a test or complete an OA with a link/instructions/deadline.
+          Phrases about internal recruiter assessment still mean "applied".
+    
+        FORMAT:
+        - Output valid minified JSON only.
+        - No markdown, no code fences, no explanations.
+    
+        SUBJECT: %s
+        FROM: %s
+        BODY:
+        %s
+        """.formatted(subject, from, body);
+    }
 
 
     private boolean looksLikeCandidate(Email e) {
@@ -129,48 +190,7 @@ public class CandidateEmailService {
         return false;
     }
 
-    private String buildPrompt(Email e) {
-        String subject = e.getSubject() == null ? "" : e.getSubject();
-        String from    = e.getFromAddr() == null ? "" : e.getFromAddr();
-        String body    = e.getBodyText() == null ? "" : e.getBodyText();
 
-        return """
-            Extract job-application info from the email below and return ONLY a SINGLE compact, MINIFIED JSON object.
-            The JSON MUST contain exactly these keys (all REQUIRED, never null/empty):
-        
-            {
-              "is_application": boolean,           // true if this email is about the user's application lifecycle, false otherwise
-              "company": string,                   // "(unknown)" if unsure
-              "role_title": string,                // "(unknown)" if unsure
-              "location": string,                  // "(unknown)" if missing
-              "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // use "other" if unclear
-              "next_action": string,               // "(unknown)" if missing
-              "notes": string                      // brief summary or reason; never empty
-            }
-        
-            CLASSIFICATION RULES:
-            - If the email is directly about the user's OWN application lifecycle (thank-you, applied, status update, assessment/OA, interview, offer, rejection, portal updates), then "is_application" must be true — even if some fields are unknown.
-            - If it is a newsletter, referral campaign, mentorship, event/community email, marketing, or anything not about the user's candidacy, set "is_application" to false.
-        
-            EXTRACTION RULES:
-            - Never output null or empty strings — use "(unknown)" when needed.
-            - Prefer role/company from the SUBJECT or explicit "Thank you for applying to..." lines.
-            - Do not infer role from sender signatures (e.g., "Senior SDE" in a signature is not the user's role).
-            - Only extract actual job location (like "United States (Remote)", "Seattle, WA"). Ignore addresses in footers.
-            - Status must always be one of the six values.
-            - Next action should be the most concrete required step for the user ("schedule interview", "complete OA", or "(unknown)" if none).
-            - Notes should be short, 1–2 phrases: e.g., "application received", "OA invitation", "interview scheduled", "rejection", "mentorship pairing".
-        
-            FORMAT:
-            - Output valid minified JSON only.
-            - No markdown, no code fences, no explanations.
-        
-            SUBJECT: %s
-            FROM: %s
-            BODY:
-            %s
-            """.formatted(subject, from, body);
-    }
 
     private boolean merge(Supplier<String> getter, Consumer<String> setter, String newValue) {
         if (newValue == null || newValue.isBlank()) return false;
