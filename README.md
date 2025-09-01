@@ -47,12 +47,12 @@ The goal is to give job seekers a clean dashboard — no more digging through in
 
 ## 🛠 Tech Stack
 
-- **Language:** Java 21  
+- **Language:** Java 21, TypeScript ~5.8.3 
 - **Framework:** Spring Boot 3  
 - **Database:** PostgreSQL (Dockerized)  
 - **Migrations:** Flyway  
 - **Auth & APIs:** Google OAuth2, Gmail API  
-- **UI:** Thymeleaf (for now; React planned)  
+- **UI:** React (Vite), Thymeleaf   
 
 ---
 
