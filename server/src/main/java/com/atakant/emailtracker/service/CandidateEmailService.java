@@ -7,10 +7,11 @@ import com.atakant.emailtracker.domain.Application;
 
 import com.atakant.emailtracker.utils.AppNorm;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import org.springframework.transaction.annotation.Transactional;
-
+import java.util.concurrent.CompletableFuture;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -25,6 +26,7 @@ public class CandidateEmailService {
     private final EmailRepository emailRepo;
     private final ApplicationRepository appRepo;
     private final LlmClient llm;
+    private final ThreadPoolTaskExecutor parseExecutor;
 
     private static final String[] KEYWORDS = {
             "application", "applied", "assessment", "coding challenge",
@@ -34,30 +36,38 @@ public class CandidateEmailService {
 
     @Transactional
     public int processEmails(UUID userId, List<Email> emails) {
-        int processed = 0, saved = 0, skippedNonJob = 0, failed = 0;
-        for (Email e : emails) {
+        List<Email> candidates = emails.stream()
+                .filter(this::looksLikeCandidate)
+                .toList();
 
-            if (!looksLikeCandidate(e)) continue;
+        List<CompletableFuture<Extracted>> futures = candidates.stream()
+                .map(e -> CompletableFuture.supplyAsync(() -> {
+                    var parsed = llm.extractApplication(buildPrompt(e));
+                    return new Extracted(e, parsed);
+                }, parseExecutor))
+                .toList();
 
-            var parsed = llm.extractApplication(buildPrompt(e));
-            if (parsed == null) continue;
-
-            if (!parsed.isApplication()) {
-                skippedNonJob++;
-                continue;
-            }
-
+        int saved = 0, skippedNonJob = 0, failed = 0;
+        for (CompletableFuture<Extracted> f : futures) {
+            Extracted it = f.join();
+            if (it.parsed == null) continue;
+            if (!it.parsed.isApplication()) { skippedNonJob++; continue; }
             try {
-                upsertApplication(userId, e.getId(), parsed);
+                upsertApplication(userId, it.email.getId(), it.parsed);
                 saved++;
             } catch (org.springframework.dao.DataIntegrityViolationException ex) {
                 failed++;
-                System.err.println("Failed to save application for email " + e.getId() + ": " + ex.getMessage());
+                System.err.println("Failed to save application for email " + it.email.getId() + ": " + ex.getMessage());
             }
-            processed++;
         }
         System.out.printf("apps: saved=%d, skippedNonJob=%d, failed=%d%n", saved, skippedNonJob, failed);
-        return processed;
+        return saved;
+    }
+
+    private static final class Extracted {
+        final Email email;
+        final LlmClient.ApplicationExtractionResult parsed;
+        Extracted(Email e, LlmClient.ApplicationExtractionResult p) { this.email = e; this.parsed = p; }
     }
 
     private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
