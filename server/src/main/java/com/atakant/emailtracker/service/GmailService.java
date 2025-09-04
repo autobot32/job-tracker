@@ -10,6 +10,7 @@ import com.google.api.services.gmail.model.*;
 import jakarta.mail.internet.MailDateFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -23,6 +24,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.Base64;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
+
 
 @Slf4j
 @Service
@@ -33,72 +37,82 @@ public class GmailService {
     private final UserRepository userRepository;
     private final EmailRepository emailRepository;
     private final Gmail gmail;
+    private final ThreadPoolTaskExecutor fetchExecutor;
 
     // Fetch gmail messages since a given date
     public List<GmailMessage> fetchMessagesSince(Authentication authentication, String afterYyyyMmDd) throws Exception {
-        final int pageSize = 25;
+        final int pageSize = 50;
         final String query = "after:" + afterYyyyMmDd + " -in:chats";
+
+        String accessToken = resolveAccessToken(authentication);
+
+        var transport   = gmail.getRequestFactory().getTransport();
+        var jsonFactory = gmail.getJsonFactory();
+        String appName  = gmail.getApplicationName();
+
+        com.google.api.client.http.HttpRequestInitializer init = req ->
+                req.getHeaders().setAuthorization("Bearer " + accessToken);
+
+        Gmail tokenGmail = new Gmail.Builder(transport, jsonFactory, init)
+                .setApplicationName(appName)
+                .build();
 
         String pageToken = null;
         List<GmailMessage> results = new ArrayList<>();
-        Map<String, String> labelNameById = loadLabelNameMap();
+
+        Map<String, String> labelNameById = loadLabelNameMap(tokenGmail);
 
         do {
-            ListMessagesResponse resp = gmail.users().messages()
+            ListMessagesResponse resp = tokenGmail.users().messages()
                     .list("me")
                     .setLabelIds(List.of("INBOX"))
                     .setQ(query)
                     .setIncludeSpamTrash(false)
                     .setMaxResults((long) pageSize)
-                    .setFields("messages(id,threadId),nextPageToken")
+                    .setFields("messages/id,nextPageToken")
                     .setPageToken(pageToken)
                     .execute();
 
             List<Message> summary = resp.getMessages();
             if (summary == null || summary.isEmpty()) break;
 
+            var rawPool = fetchExecutor.getThreadPoolExecutor();
+
+            List<CompletableFuture<GmailMessage>> futures = new ArrayList<>(summary.size());
             for (Message m : summary) {
-                Message full = gmail.users().messages().get("me", m.getId())
-                        .setFormat("full")
-                        .setFields("id,threadId,internalDate,labelIds,payload")
-                        .execute();
+                try {
+                    futures.add(CompletableFuture.supplyAsync(
+                            () -> fetchOneMessageAsDto(tokenGmail, m.getId(), labelNameById),
+                            rawPool
+                    ));
+                } catch (RejectedExecutionException rex) {
+                    GmailMessage dto = fetchOneMessageAsDto(tokenGmail, m.getId(), labelNameById);
+                    futures.add(CompletableFuture.completedFuture(dto));
+                }
+            }
 
-                MessagePart payload = full.getPayload();
-                List<MessagePartHeader> headers = payload != null ? payload.getHeaders() : Collections.emptyList();
 
-                String rfc822 = header(headers, "Message-ID");
-                String dateHdr = header(headers, "Date");
-                String subject = header(headers, "Subject");
-                String from    = header(headers, "From");
-                String to      = header(headers, "To");
-
-                long internalMs = full.getInternalDate() != null ? full.getInternalDate() : 0L;
-                OffsetDateTime sentAtUtc = toUtc(dateHdr, internalMs);
-
-                String bodyText = extractBodyText(payload);
-                List<String> labels = toLabelNames(full.getLabelIds(), labelNameById);
-
-                GmailMessage dto = new GmailMessage(
-                        full.getId(),
-                        full.getThreadId(),
-                        isBlank(rfc822) ? null : rfc822,
-                        internalMs,
-                        nullToEmpty(from),
-                        nullToEmpty(to),
-                        nullToEmpty(subject),
-                        sentAtUtc,
-                        bodyText,
-                        labels
-                );
-
-                results.add(dto);
+            for (var f : futures) {
+                GmailMessage dto = f.join();
+                if (dto != null) results.add(dto);
             }
 
             pageToken = resp.getNextPageToken();
         } while (pageToken != null);
 
-        log.info("Fetched {} GmailMessage DTOs", results.size());
+        log.info("Fetched {} GmailMessage DTOs concurrently", results.size());
         return results;
+    }
+
+    private Map<String, String> loadLabelNameMap(Gmail client) throws Exception {
+        Map<String, String> map = new HashMap<>();
+        ListLabelsResponse labelsResponse = client.users().labels().list("me").execute();
+        if (labelsResponse.getLabels() != null) {
+            for (Label l : labelsResponse.getLabels()) {
+                map.put(l.getId(), l.getName());
+            }
+        }
+        return map;
     }
 
     // Maps gmail message to unique user
@@ -115,7 +129,7 @@ public class GmailService {
                     ? g.rfc822MessageId()
                     : g.gmailId();
 
-            // 💡 check if this (user, messageIdHash) already exists
+            // check if this (user, messageIdHash) already exists
             if (emailRepository.existsByUserIdAndMessageIdHash(user.getId(), msgIdHash)) {
                 continue;
             }
@@ -137,17 +151,6 @@ public class GmailService {
             saved.add(emailRepository.save(e));
         }
         return saved;
-    }
-
-    private Map<String, String> loadLabelNameMap() throws Exception {
-        Map<String, String> map = new HashMap<>();
-        ListLabelsResponse labelsResponse = gmail.users().labels().list("me").execute();
-        if (labelsResponse.getLabels() != null) {
-            for (Label l : labelsResponse.getLabels()) {
-                map.put(l.getId(), l.getName());
-            }
-        }
-        return map;
     }
 
     private List<String> toLabelNames(List<String> ids, Map<String, String> nameById) {
@@ -236,6 +239,48 @@ public class GmailService {
         }
         return client.getAccessToken().getTokenValue();
     }
+
+
+    private GmailMessage fetchOneMessageAsDto(Gmail client, String gmailId, Map<String, String> labelNameById) {
+        try {
+            Message full = client.users().messages().get("me", gmailId)
+                    .setFormat("full")
+                    .setFields("id,threadId,internalDate,labelIds,payload")
+                    .execute();
+
+            MessagePart payload = full.getPayload();
+            List<MessagePartHeader> headers = (payload != null) ? payload.getHeaders() : java.util.Collections.emptyList();
+
+            String rfc822  = header(headers, "Message-ID");
+            String dateHdr = header(headers, "Date");
+            String subject = header(headers, "Subject");
+            String from    = header(headers, "From");
+            String to      = header(headers, "To");
+
+            long internalMs = (full.getInternalDate() != null) ? full.getInternalDate() : 0L;
+            java.time.OffsetDateTime sentAtUtc = toUtc(dateHdr, internalMs);
+
+            String bodyText = extractBodyText(payload);
+            List<String> labels = toLabelNames(full.getLabelIds(), labelNameById);
+
+            return new GmailMessage(
+                    full.getId(),
+                    full.getThreadId(),
+                    (rfc822 != null && !rfc822.isBlank()) ? rfc822 : null,
+                    internalMs,
+                    nullToEmpty(from),
+                    nullToEmpty(to),
+                    nullToEmpty(subject),
+                    sentAtUtc,
+                    bodyText,
+                    labels
+            );
+        } catch (Exception e) {
+            log.warn("Gmail GET failed for id {}: {}", gmailId, e.toString());
+            return null;
+        }
+    }
+
 }
 
 

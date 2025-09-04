@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -40,16 +41,36 @@ public class CandidateEmailService {
                 .filter(this::looksLikeCandidate)
                 .toList();
 
-        List<CompletableFuture<Extracted>> futures = candidates.stream()
-                .map(e -> CompletableFuture.supplyAsync(() -> {
-                    var parsed = llm.extractApplication(buildPrompt(e));
-                    return new Extracted(e, parsed);
-                }, parseExecutor))
-                .toList();
+        var rawPool = parseExecutor.getThreadPoolExecutor();
+
+        List<CompletableFuture<Extracted>> futures = new java.util.ArrayList<>(candidates.size());
+        for (Email e : candidates) {
+            try {
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        LlmClient.ApplicationExtractionResult parsed = llm.extractApplication(buildPrompt(e));
+                        return new Extracted(e, parsed);
+                    } catch (Exception ex) {
+                        return new Extracted(e, null);
+                    }
+                }, rawPool));
+            } catch (RejectedExecutionException rex) {
+                LlmClient.ApplicationExtractionResult parsed = null;
+                try {
+                    parsed = llm.extractApplication(buildPrompt(e));
+                } catch (Exception ignore) {}
+                futures.add(CompletableFuture.completedFuture(new Extracted(e, parsed)));
+            }
+        }
 
         int saved = 0, skippedNonJob = 0, failed = 0;
         for (CompletableFuture<Extracted> f : futures) {
-            Extracted it = f.join();
+            Extracted it;
+            try {
+                it = f.join();
+            } catch (Exception ignore) {
+                continue;
+            }
             if (it.parsed == null) continue;
             if (!it.parsed.isApplication()) { skippedNonJob++; continue; }
             try {
@@ -71,7 +92,6 @@ public class CandidateEmailService {
     }
 
     private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
-        // Prefer LLM-normalized keys; fallback to AppNorm for safety
         String normCo = (x.getNormalizedCompany() != null && !x.getNormalizedCompany().isBlank())
                 ? x.getNormalizedCompany().trim()
                 : AppNorm.normCompany(x.getCompany());
