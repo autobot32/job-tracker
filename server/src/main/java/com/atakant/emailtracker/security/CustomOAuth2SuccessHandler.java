@@ -98,10 +98,10 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
 
         tokenRepository.save(token);
 
-        // 5) Redirect (prefer saved request, else dashboard)
+        // 5) Redirect
         SavedRequestAwareAuthenticationSuccessHandler redirector = new SavedRequestAwareAuthenticationSuccessHandler();
-        redirector.setDefaultTargetUrl("/dashboard");
-        redirector.setAlwaysUseDefaultTargetUrl(false);
+        redirector.setDefaultTargetUrl("http://localhost:5173/applications");
+        redirector.setAlwaysUseDefaultTargetUrl(true);
         redirector.onAuthenticationSuccess(request, response, authentication);
     }
 }

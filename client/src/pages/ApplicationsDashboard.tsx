@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import LoadingOverlay from "../components/LoadingOverlay";
 
 const STATUS_STYLES: Record<string, string> = {
   applied: "bg-blue-100 text-blue-800",
@@ -19,10 +20,17 @@ export type ApplicationRow = {
 };
 
 const fetchApplications = async (): Promise<ApplicationRow[]> => {
-  const res = await fetch("/api/applications", { credentials: "include" }); // ✅ fixed path
+  const res = await fetch("/api/applications", { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
   return res.json();
 };
+
+function formatToBackendDate(input: string): string | null {
+  if (!input) return null;
+  const [y, m, d] = input.split("-");
+  if (!y || !m || !d) return null;
+  return `${y}/${m}/${d}`;
+}
 
 function classNames(...s: Array<string | false | undefined>) {
   return s.filter(Boolean).join(" ");
@@ -41,6 +49,13 @@ export default function ApplicationsDashboard() {
   const [data, setData] = useState<ApplicationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const API_BASE = "http://localhost:8080";
+
+  const [ingestOpen, setIngestOpen] = useState(false);
+  const [ingestDate, setIngestDate] = useState<string>(""); // yyyy-MM-dd (from <input type="date">)
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestMsg, setIngestMsg] = useState<string>("Fetching emails…");
 
   // Filters & UI state
   const [query, setQuery] = useState("");
@@ -91,8 +106,41 @@ export default function ApplicationsDashboard() {
     return rows;
   }, [data, query, status, sortBy]);
 
+  async function startIngest() {
+    // Validate + format the date for backend
+    const after = formatToBackendDate(ingestDate);
+
+    setIngesting(true);
+    setIngestMsg("Starting Gmail ingest…");
+
+    try {
+      const res = await fetch(`${API_BASE}/ingest/run-json`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(after ? { after } : {}),
+      });
+      if (!res.ok) throw new Error(`Ingest failed: ${res.status}`);
+
+      const payload = await res.json();
+      setIngestMsg(
+        `Processed ${payload.emails} emails; saved ${payload.saved} applications.`
+      );
+
+      // Re-fetch table
+      const rows = await fetchApplications();
+      setData(rows);
+      setIngestOpen(false);
+    } catch (e: any) {
+      setError(e.message ?? "Ingest error");
+    } finally {
+      setIngesting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
+      {ingesting && <LoadingOverlay text={ingestMsg} />}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-100">
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <div>
@@ -102,6 +150,12 @@ export default function ApplicationsDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIngestOpen(true)}
+              className="px-3 py-2 rounded-xl bg-indigo-600 text-white shadow hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              Fetch from Gmail
+            </button>
             <button
               onClick={() => downloadCSV(filtered)}
               className="px-3 py-2 rounded-xl bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
@@ -213,6 +267,45 @@ export default function ApplicationsDashboard() {
           </table>
         </div>
       </main>
+      {ingestOpen && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl ring-1 ring-gray-200">
+            <h2 className="text-lg font-semibold mb-2">Fetch from Gmail</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Select the earliest date to fetch from (inclusive). Leave blank to
+              fetch everything.
+            </p>
+
+            <label className="block text-sm text-gray-700 mb-1">
+              Start date
+            </label>
+            <input
+              type="date"
+              value={ingestDate}
+              onChange={(e) => setIngestDate(e.target.value)}
+              className="w-full rounded-xl bg-white ring-1 ring-gray-200 shadow-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") startIngest();
+              }}
+            />
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setIngestOpen(false)}
+                className="px-3 py-2 rounded-xl bg-white ring-1 ring-gray-200 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={startIngest}
+                disabled={ingesting}
+                className="px-3 py-2 rounded-xl bg-indigo-600 text-white shadow hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {ingesting ? "Fetching…" : "Start fetch"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

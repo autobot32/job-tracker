@@ -9,11 +9,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* Default to login page */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/applications" element={<ApplicationsDashboard />} />
-        {/* optional: a catch-all */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

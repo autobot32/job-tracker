@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:3000" }, allowCredentials = "true")
 @Controller
 @RequestMapping("/ingest")
 @RequiredArgsConstructor
@@ -62,6 +63,35 @@ public class IngestController {
         return userRepository.findByEmail(email)
                 .map(User::getId)
                 .orElseThrow(() -> new IllegalStateException("No user found for email: " + email));
+    }
+
+    @PostMapping("/run-json")
+    @ResponseBody
+    public java.util.Map<String, Object> runJson(
+            Model model,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal OAuth2User principal,
+            Authentication authentication,
+            @RequestParam(name = "after", required = false) String afterStr
+    ) {
+        try {
+            String afterArg = (afterStr == null || afterStr.isBlank()) ? null : afterStr.trim();
+
+            java.util.List<Email> ingested = gmailService.ingestAndSave(authentication, afterArg);
+
+            java.util.UUID userId = resolveCurrentUserId(principal);
+            int saved = candidateEmailService.processEmails(userId, ingested);
+
+            return java.util.Map.of(
+                    "ok", true,
+                    "emails", ingested.size(),
+                    "saved", saved
+            );
+        } catch (Exception e) {
+            return java.util.Map.of(
+                    "ok", false,
+                    "error", e.getMessage()
+            );
+        }
     }
 }
 

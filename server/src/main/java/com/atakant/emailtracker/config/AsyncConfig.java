@@ -13,8 +13,8 @@ public class AsyncConfig {
     public ThreadPoolTaskExecutor parseExecutor() {
         ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
         ex.setCorePoolSize(4);
-        ex.setMaxPoolSize(8);
-        ex.setQueueCapacity(300);
+        ex.setMaxPoolSize(4);
+        ex.setQueueCapacity(100);
         ex.setThreadNamePrefix("parse-");
         ex.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         ex.initialize();

@@ -2,10 +2,11 @@ package com.atakant.emailtracker.security;
 
 import java.util.Set;
 
-import jakarta.annotation.PostConstruct;
+
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -68,6 +69,10 @@ public class SecurityConfig {
 
         http
                 .cors(c -> {})
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        new AntPathRequestMatcher("/ingest/**"),
+                        new AntPathRequestMatcher("/api/**")
+                ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/", "/index.html", "/css/**", "/js/**",
