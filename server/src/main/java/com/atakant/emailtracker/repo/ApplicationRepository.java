@@ -11,6 +11,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID> 
   Optional<Application> findByUserIdAndNormalizedCompanyAndNormalizedRoleTitle(
           UUID userId, String normalizedCompany, String normalizedRoleTitle);
 
+  void deleteByUserId(UUID userId);
+
 
 
 }

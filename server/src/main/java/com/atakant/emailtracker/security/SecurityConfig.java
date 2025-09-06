@@ -71,7 +71,8 @@ public class SecurityConfig {
                 .cors(c -> {})
                 .csrf(csrf -> csrf.ignoringRequestMatchers(
                         new AntPathRequestMatcher("/ingest/**"),
-                        new AntPathRequestMatcher("/api/**")
+                        new AntPathRequestMatcher("/api/**"),
+                        new AntPathRequestMatcher("/applications")
                 ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
@@ -96,7 +97,7 @@ public class SecurityConfig {
     @Bean
     org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
         var cfg = new org.springframework.web.cors.CorsConfiguration();
-        cfg.setAllowedOrigins(java.util.List.of("http://localhost:5173", "http://localhost:3000")); // frontend dev servers
+        cfg.setAllowedOrigins(java.util.List.of("http://localhost:5173", "http://localhost:3000"));
         cfg.setAllowedMethods(java.util.List.of("GET","POST","PUT","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(java.util.List.of("*"));
         cfg.setAllowCredentials(true);

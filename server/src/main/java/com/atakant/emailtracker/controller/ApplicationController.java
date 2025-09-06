@@ -2,6 +2,7 @@ package com.atakant.emailtracker.controller;
 
 import com.atakant.emailtracker.domain.Application;
 import com.atakant.emailtracker.repo.ApplicationRepository;
+import com.atakant.emailtracker.service.ApplicationService;
 import com.atakant.emailtracker.auth.User;
 import com.atakant.emailtracker.auth.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -24,10 +25,12 @@ public class ApplicationController {
 
   private final ApplicationRepository applications;
   private final UserRepository users;
+  private final ApplicationService applicationService;
 
-  public ApplicationController(ApplicationRepository applications, UserRepository users) {
+  public ApplicationController(ApplicationRepository applications, UserRepository users, ApplicationService applicationService) {
     this.applications = applications;
     this.users = users;
+    this.applicationService = applicationService;
   }
 
   /**
@@ -67,6 +70,16 @@ public class ApplicationController {
     body.setLastUpdatedAt(OffsetDateTime.now());
 
     return applications.save(body);
+  }
+
+  /**
+   * DELETE /applications  -> delete all for the current user.
+   */
+  @DeleteMapping
+  @ResponseStatus(HttpStatus.NO_CONTENT) // 204
+  public void deleteAll(@AuthenticationPrincipal OAuth2User principal) {
+    User me = requireUser(principal);
+    applicationService.deleteAllForUser(me.getId());
   }
 
   private User requireUser(OAuth2User principal) {

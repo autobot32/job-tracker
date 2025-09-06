@@ -138,6 +138,25 @@ export default function ApplicationsDashboard() {
     }
   }
 
+  async function handleClearAll() {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete all your applications? This cannot be undone."
+      )
+    )
+      return;
+    try {
+      await fetch(`${API_BASE}/applications`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const rows = await fetchApplications();
+      setData(rows);
+    } catch (e) {
+      setError("Failed to clear applications");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       {ingesting && <LoadingOverlay text={ingestMsg} />}
@@ -161,6 +180,12 @@ export default function ApplicationsDashboard() {
               className="px-3 py-2 rounded-xl bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               Export CSV
+            </button>
+            <button
+              onClick={handleClearAll}
+              className="px-3 py-2 rounded-xl bg-rose-600 text-white shadow hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+            >
+              Clear All
             </button>
           </div>
         </div>
