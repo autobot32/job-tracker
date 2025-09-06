@@ -45,8 +45,7 @@ public class Email {
     @Column(name = "llm_type")
     private String llmType;
 
-    // V2 additions you made
-    @Column(name = "gmail_id")
+    @Column(name = "gmail_id", nullable = false, unique = true)
     private String gmailId;
 
     @Column(name = "internal_date_ms")

@@ -29,7 +29,7 @@ spring:
     prefix: classpath:/templates/
     suffix: .html
   config:
-    import: optional:file:server/.env[.properties]
+    import: optional:file:.env[.properties]
 
   security:
     oauth2:

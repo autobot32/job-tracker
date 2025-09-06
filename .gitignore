@@ -3,6 +3,7 @@
 # ------------------------------
 server/target/
 server/.env
+.env
 *.log
 
 # IntelliJ / IDE

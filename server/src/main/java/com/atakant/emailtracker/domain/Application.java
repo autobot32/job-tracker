@@ -52,11 +52,14 @@ public class Application {
   @Column(name = "is_application", nullable = false)
   private boolean isApplication = true;
 
-  @Column(name = "normalized_company")
+  @Column(name = "normalized_company", nullable = false)
   private String normalizedCompany;
 
-  @Column(name = "normalized_role_title")
+  @Column(name = "normalized_role_title", nullable = false)
   private String normalizedRoleTitle;
+
+  @Column(name = "canonical_key", nullable = false)
+  private String canonicalKey;
 
   @PrePersist
   void onCreate() {

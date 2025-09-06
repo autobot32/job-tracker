@@ -77,24 +77,17 @@ EXTRACTION RULES:
 - "notes": 1–2 short phrases: "application received", "OA invitation", "interview scheduled", "rejection", etc.
 
 LLM-POWERED NORMALIZATION (must be stable across paraphrases):
-- "normalized_company": lowercase, remove punctuation, strip corporate suffixes (inc, llc, corp, ltd, co), collapse whitespace. Always output the canonical company name only (e.g., "google", "dicks sporting goods", "target"). Examples:
+- "normalized_company": lowercase, remove punctuation and possessives ('s), strip corporate suffixes (inc, llc, corp, ltd, co, plc), collapse whitespace. Always output the canonical company name only (e.g., "google", "dicks sporting goods", "target"). Examples:
   - "Google Inc." -> "google"
   - "Google LLC" -> "google"
   - "GOOGLE" -> "google"
 - "normalized_role_title": lowercase, remove punctuation, collapse whitespace, normalize synonyms, and canonicalize token order so that cosmetic re-orderings produce the same value.
-  - "TARGET" -> "target"
-  - "Target Corp." -> "target"
-  - "Dick's Sporting Goods" -> "dicks sporting goods"
-  - "DICK'S Sporting Goods, Inc." -> "dicks sporting goods"
-  - "Dick's Sporting Goods LLC" -> "dicks sporting goods"
-  - Normalize: "software engineer" ~ "software engineering" ~ "swe" -> "software engineer"
-  - "internship" -> "intern"
-  - Keep seasonal/year tags but standardize position: use "summer 2026" form when present.
+  - "swe" / "software engineering" → "software engineer"
+  - "internship" → "intern"
+  - "2026 summer" / "summer 2026" → "summer 2026"
   - Examples:
-    - "Software Engineering Internship (Summer 2026)" -> "software engineer intern summer 2026"
-    - "2026 SWE Intern - Summer" -> "software engineer intern summer 2026"
-    - "Backend Software Engineer Intern (Global E-Commerce) - 2026 Summer (BS/MS)" ->
-      "backend software engineer intern summer 2026 global e commerce"
+    - "Software Engineering Internship (Summer 2026)" → "software engineer intern summer 2026"
+    - "Backend SWE Intern – 2026 Summer" → "backend software engineer intern summer 2026"
 
 WHEN is_application = false:
 - "status": "other"

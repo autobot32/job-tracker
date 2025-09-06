@@ -4,6 +4,7 @@ import com.atakant.emailtracker.auth.User;
 import com.atakant.emailtracker.auth.UserRepository;
 import com.atakant.emailtracker.domain.Email;
 import com.atakant.emailtracker.gmail.GmailMessage;
+import com.atakant.emailtracker.repo.ApplicationRepository;
 import com.atakant.emailtracker.repo.EmailRepository;
 import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.*;
@@ -27,7 +28,9 @@ import java.util.*;
 import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
-
+import org.springframework.dao.DataIntegrityViolationException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 @Slf4j
 @Service
@@ -126,14 +129,16 @@ public class GmailService {
         List<Email> saved = new ArrayList<>();
 
         for (GmailMessage g : dtos) {
-            String msgIdHash = (g.rfc822MessageId() != null && !g.rfc822MessageId().isBlank())
-                    ? g.rfc822MessageId()
-                    : g.gmailId();
-
-            // check if this (user, messageIdHash) already exists
-            if (emailRepository.existsByUserIdAndMessageIdHash(user.getId(), msgIdHash)) {
+            // 1) Idempotency via gmailId (unique in DB)
+            if (emailRepository.findByGmailId(g.gmailId()).isPresent()) {
                 continue;
             }
+            // (If you want user-scoped check instead)
+            // if (emailRepository.findByUserIdAndGmailId(user.getId(), g.gmailId()).isPresent()) continue;
+
+            // 2) Build a stable hash of (userId | (rfc822 or gmailId))
+            String seed = user.getId() + "|" + (isBlank(g.rfc822MessageId()) ? g.gmailId() : g.rfc822MessageId());
+            String msgIdHash = sha256(seed);
 
             Email e = Email.builder()
                     .userId(user.getId())
@@ -149,9 +154,27 @@ public class GmailService {
                     .rawLabel(String.join(",", g.labels()))
                     .build();
 
-            saved.add(emailRepository.save(e));
+            try {
+                saved.add(emailRepository.save(e));
+            } catch (DataIntegrityViolationException dup) {
+                // In case of a rare race (two threads attempt same gmailId),
+                // swallow and continue: another thread already inserted it.
+                log.debug("Duplicate gmailId insert avoided for {}", g.gmailId());
+            }
         }
         return saved;
+    }
+
+    private static String sha256(String in) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] b = md.digest(in.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(b.length * 2);
+            for (byte x : b) sb.append(String.format("%02x", x));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     private List<String> toLabelNames(List<String> ids, Map<String, String> nameById) {
@@ -286,8 +309,6 @@ public class GmailService {
     public void deleteAllForUser(UUID userId) {
         emailRepository.deleteByUserId(userId);
     }
-
-
 
 }
 

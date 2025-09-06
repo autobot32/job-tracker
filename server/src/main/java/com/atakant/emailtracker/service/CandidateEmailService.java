@@ -24,7 +24,6 @@ import java.util.function.Supplier;
 @RequiredArgsConstructor
 public class CandidateEmailService {
 
-    private final EmailRepository emailRepo;
     private final ApplicationRepository appRepo;
     private final LlmClient llm;
     private final ThreadPoolTaskExecutor parseExecutor;
@@ -91,64 +90,20 @@ public class CandidateEmailService {
         Extracted(Email e, LlmClient.ApplicationExtractionResult p) { this.email = e; this.parsed = p; }
     }
 
+
     private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
-        String normCo = (x.getNormalizedCompany() != null && !x.getNormalizedCompany().isBlank())
-                ? AppNorm.normCompany(x.getNormalizedCompany().trim()) // always re-normalize
-                : AppNorm.normCompany(x.getCompany());
+        String company  = emptyToUnknown(x.getCompany());
+        String role     = emptyToUnknown(x.getRoleTitle());
+        String location = emptyToUnknown(x.getLocation());
+        String status   = emptyToUnknown(x.getStatus() == null ? "applied" : x.getStatus());
 
-        String normRole = (x.getNormalizedRoleTitle() != null && !x.getNormalizedRoleTitle().isBlank())
-                ? AppNorm.normRole(x.getNormalizedRoleTitle().trim()) // always re-normalize
-                : AppNorm.normRole(x.getRoleTitle());
+        String nc = AppNorm.normCompany(company);
+        String nr = AppNorm.normRole(role);
 
-        Application existing = appRepo
-                .findByUserIdAndNormalizedCompanyAndNormalizedRoleTitle(userId, normCo, normRole)
-                .orElse(null);
+        // canonical unique per (user, company, role)
+        String ck = (userId.toString() + "|" + nc + "|" + nr);
 
-        if (existing == null) {
-            Application a = new Application();
-            a.setId(UUID.randomUUID());
-            a.setUserId(userId);
-            a.setCompany(emptyToUnknown(x.getCompany()));
-            a.setRoleTitle(emptyToUnknown(x.getRoleTitle()));
-            a.setNormalizedCompany(normCo);
-            a.setNormalizedRoleTitle(normRole);
-            a.setLocation(emptyToUnknown(x.getLocation()));
-            a.setStatus(emptyToUnknown(x.getStatus()));
-            a.setNextStep(emptyToUnknown(x.getNotes()));
-            a.setNotes(emptyToUnknown(x.getNotes()));
-            a.setApplication(true);
-            a.setSourceEmailId(emailId);
-            a.setFirstSeenAt(OffsetDateTime.now());
-            a.setLastUpdatedAt(OffsetDateTime.now());
-            appRepo.save(a);
-            return;
-        }
-
-        boolean dirty = false;
-
-        // Promote status (never downgrade). “other” won’t override applied/interview/etc.
-        String finalStatus = AppNorm.promoteStatus(existing.getStatus(), x.getStatus());
-        dirty |= merge(existing::getStatus, existing::setStatus, finalStatus);
-
-        dirty |= merge(existing::getCompany, existing::setCompany, emptyToUnknown(x.getCompany()));
-        dirty |= merge(existing::getRoleTitle, existing::setRoleTitle, emptyToUnknown(x.getRoleTitle()));
-
-        // Keep normalized keys stable if LLM gives them
-        dirty |= merge(existing::getNormalizedCompany, existing::setNormalizedCompany, normCo);
-        dirty |= merge(existing::getNormalizedRoleTitle, existing::setNormalizedRoleTitle, normRole);
-
-        dirty |= merge(existing::getLocation, existing::setLocation,
-                AppNorm.mergeLocation(existing.getLocation(), emptyToUnknown(x.getLocation())));
-        dirty |= merge(existing::getNextStep, existing::setNextStep, emptyToUnknown(x.getNextAction()));
-        dirty |= merge(existing::getNotes, existing::setNotes,
-                AppNorm.mergeNotes(existing.getNotes(), emptyToUnknown(x.getNotes())));
-
-        if (existing.getSourceEmailId() == null) { existing.setSourceEmailId(emailId); dirty = true; }
-
-        if (dirty) {
-            existing.setLastUpdatedAt(OffsetDateTime.now());
-            appRepo.save(existing);
-        }
+        appRepo.upsert(userId, nc, nr, ck, company, role, location, status);
     }
 
 
@@ -164,7 +119,7 @@ public class CandidateEmailService {
         return """
         Extract job-application info from the email below and return ONLY a SINGLE compact, MINIFIED JSON object.
         The JSON MUST contain exactly these keys (all REQUIRED, never null/empty):
-    
+
         {
           "is_application": boolean,           // true if this email is about the user's application lifecycle, false otherwise
           "company": string,                   // "(unknown)" if unsure
@@ -176,11 +131,11 @@ public class CandidateEmailService {
           "normalized_company": string,        // normalized: lowercase, trimmed, no punctuation
           "normalized_role_title": string      // normalized: lowercase, trimmed, no punctuation, and words sorted alphabetically
         }
-    
+
         CLASSIFICATION RULES:
         - If the email is directly about the user's OWN application lifecycle (thank-you, applied, status update, assessment/OA, interview, offer, rejection, portal updates), then "is_application" must be true — even if some fields are unknown.
         - If it is a newsletter, referral campaign, mentorship, event/community email, marketing, or anything not about the user's candidacy, set "is_application" to false.
-    
+
         EXTRACTION RULES:
         - Never output null or empty strings — use "(unknown)" when needed.
         - Prefer role/company from the SUBJECT or explicit "Thank you for applying to..." lines.
@@ -192,11 +147,11 @@ public class CandidateEmailService {
         - IMPORTANT: Do NOT mark "assessment" unless the candidate is asked to take a test or complete an OA with a link/instructions/deadline.
           Phrases about internal recruiter assessment still mean "applied".
         - For normalization: "normalized_company" and "normalized_role_title" must be lowercase, trimmed, and punctuation removed. For "normalized_role_title", also sort the words alphabetically so that e.g. "Software Engineer Intern" and "Intern Software Engineer" are treated as the same.
-    
+
         FORMAT:
         - Output valid minified JSON only.
         - No markdown, no code fences, no explanations.
-    
+
         SUBJECT: %s
         FROM: %s
         BODY:
@@ -219,17 +174,6 @@ public class CandidateEmailService {
                 from.contains("icims") || from.contains("brassring"))
             return true;
 
-        return false;
-    }
-
-
-
-    private boolean merge(Supplier<String> getter, Consumer<String> setter, String newValue) {
-        if (newValue == null || newValue.isBlank()) return false;
-        if (!Objects.equals(getter.get(), newValue)) {
-            setter.accept(newValue);
-            return true;
-        }
         return false;
     }
 }
