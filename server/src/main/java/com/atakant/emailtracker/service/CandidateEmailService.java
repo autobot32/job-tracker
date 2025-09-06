@@ -93,11 +93,11 @@ public class CandidateEmailService {
 
     private void upsertApplication(UUID userId, UUID emailId, LlmClient.ApplicationExtractionResult x) {
         String normCo = (x.getNormalizedCompany() != null && !x.getNormalizedCompany().isBlank())
-                ? x.getNormalizedCompany().trim()
+                ? AppNorm.normCompany(x.getNormalizedCompany().trim()) // always re-normalize
                 : AppNorm.normCompany(x.getCompany());
 
         String normRole = (x.getNormalizedRoleTitle() != null && !x.getNormalizedRoleTitle().isBlank())
-                ? x.getNormalizedRoleTitle().trim()
+                ? AppNorm.normRole(x.getNormalizedRoleTitle().trim()) // always re-normalize
                 : AppNorm.normRole(x.getRoleTitle());
 
         Application existing = appRepo
@@ -114,7 +114,7 @@ public class CandidateEmailService {
             a.setNormalizedRoleTitle(normRole);
             a.setLocation(emptyToUnknown(x.getLocation()));
             a.setStatus(emptyToUnknown(x.getStatus()));
-            a.setNextStep(emptyToUnknown(x.getNextAction()));
+            a.setNextStep(emptyToUnknown(x.getNotes()));
             a.setNotes(emptyToUnknown(x.getNotes()));
             a.setApplication(true);
             a.setSourceEmailId(emailId);
@@ -173,6 +173,8 @@ public class CandidateEmailService {
           "status": "applied"|"assessment"|"interview"|"offer"|"rejected"|"other", // use "other" if unclear
           "next_action": string,               // "(unknown)" if missing
           "notes": string                      // brief summary or reason; never empty
+          "normalized_company": string,        // normalized: lowercase, trimmed, no punctuation
+          "normalized_role_title": string      // normalized: lowercase, trimmed, no punctuation, and words sorted alphabetically
         }
     
         CLASSIFICATION RULES:
@@ -187,9 +189,9 @@ public class CandidateEmailService {
         - Status must always be one of the six values.
         - Next action should be the most concrete required step for the user ("schedule interview", "complete OA", or "(unknown)" if none).
         - Notes should be short, 1–2 phrases: e.g., "application received", "OA invitation", "interview scheduled", "rejection", "mentorship pairing".
-        
         - IMPORTANT: Do NOT mark "assessment" unless the candidate is asked to take a test or complete an OA with a link/instructions/deadline.
           Phrases about internal recruiter assessment still mean "applied".
+        - For normalization: "normalized_company" and "normalized_role_title" must be lowercase, trimmed, and punctuation removed. For "normalized_role_title", also sort the words alphabetically so that e.g. "Software Engineer Intern" and "Intern Software Engineer" are treated as the same.
     
         FORMAT:
         - Output valid minified JSON only.

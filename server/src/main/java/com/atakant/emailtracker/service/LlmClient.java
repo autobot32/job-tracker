@@ -43,7 +43,6 @@ public class LlmClient {
 You are an information-extraction system for job application emails.
 
 Return ONLY a SINGLE compact, MINIFIED JSON object with EXACTLY these keys (no extra keys, no markdown, no code fences, no explanations):
-
 {
   "is_application": boolean,
   "company": string,
@@ -78,10 +77,16 @@ EXTRACTION RULES:
 - "notes": 1–2 short phrases: "application received", "OA invitation", "interview scheduled", "rejection", etc.
 
 LLM-POWERED NORMALIZATION (must be stable across paraphrases):
-- "normalized_company": lowercase, remove punctuation, strip corporate suffixes (inc, llc, corp, ltd, co), collapse whitespace. Examples:
+- "normalized_company": lowercase, remove punctuation, strip corporate suffixes (inc, llc, corp, ltd, co), collapse whitespace. Always output the canonical company name only (e.g., "google", "dicks sporting goods", "target"). Examples:
+  - "Google Inc." -> "google"
   - "Google LLC" -> "google"
-  - "empirical foods, inc" -> "empirical foods"
+  - "GOOGLE" -> "google"
 - "normalized_role_title": lowercase, remove punctuation, collapse whitespace, normalize synonyms, and canonicalize token order so that cosmetic re-orderings produce the same value.
+  - "TARGET" -> "target"
+  - "Target Corp." -> "target"
+  - "Dick's Sporting Goods" -> "dicks sporting goods"
+  - "DICK'S Sporting Goods, Inc." -> "dicks sporting goods"
+  - "Dick's Sporting Goods LLC" -> "dicks sporting goods"
   - Normalize: "software engineer" ~ "software engineering" ~ "swe" -> "software engineer"
   - "internship" -> "intern"
   - Keep seasonal/year tags but standardize position: use "summer 2026" form when present.
@@ -102,8 +107,6 @@ WHEN is_application = false:
 OUTPUT FORMAT:
 - Always return valid minified JSON (no markdown, no commentary).
 """;
-
-
 
 
     public ApplicationExtractionResult extractApplication(String prompt) {
