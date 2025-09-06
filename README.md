@@ -21,9 +21,16 @@ The goal: give job seekers a clean, automated dashboard—no more digging throug
 
 ---
 
+# Demo
+
+![Demo](assets/jobTrackDemo.gif)
+
+---
+
 ## Project Status
 
 ### ✅ Working
+
 - Google OAuth2 login
 - Gmail API integration (read-only)
 - Email fetching + persistence
@@ -36,11 +43,13 @@ The goal: give job seekers a clean, automated dashboard—no more digging throug
 - Reset endpoint (deletes all emails & applications for user)
 
 ### 🔄 In Progress
+
 - Advanced dashboard features (filtering, analytics)
 - Task management (follow-ups, interviews, etc.)
 - More robust error handling and edge case coverage
 
 ### 🧠 Planned
+
 - Google Sheets export
 - Application analytics & insights
 - Referral/contact management
@@ -62,6 +71,7 @@ The goal: give job seekers a clean, automated dashboard—no more digging throug
 ## 📂 Project Structure
 
 ### Backend (`server/src/main/java/com/atakant/emailtracker`)
+
 - `auth/` → Authentication entities & repositories (`User`, `OAuthToken`, `UserRepository`, `OAuthTokenRepository`)
 - `config/` → Configuration beans (`AsyncConfig`, `GmailConfig`)
 - `controller/` → Web controllers (`ApplicationController`, `DashboardController`, `HealthController`, `IngestController`)
@@ -73,12 +83,14 @@ The goal: give job seekers a clean, automated dashboard—no more digging throug
 - `utils/` → Utility classes (`AppNorm`, `Hashes`, `EmailJobTrackerApplication`)
 
 ### Resources (`server/src/main/resources`)
+
 - `db/migration/` → Flyway SQL migrations (`V1__init.sql`, `V2__add_gmail_id_internal_date.sql`, `V3__rename_due_date_add_trigger.sql`, `V4__add_is_application_column.sql`)
 - `static/` → Static assets (`index.html`)
 - `templates/` → Thymeleaf templates (`dashboard.html`)
 - `application.yml` → Spring Boot configuration
 
 ### Frontend (`client/src`)
+
 - `main.tsx` → React/Vite entry point and routing
 - `pages/` → Main app pages (`ApplicationsDashboard.tsx`, `Login.tsx`)
 - `components/` → Reusable UI components (`LoadingOverlay` etc.)
@@ -136,5 +148,3 @@ This operation is handled by both the `ApplicationService` and `GmailService`.
 - `DELETE /applications` — Delete all applications and emails for the current user (reset)
 - `POST /ingest/run-json` — Ingest emails since a given date, parse with LLM, and upsert applications
 - `GET /health` — Health check
-
-
