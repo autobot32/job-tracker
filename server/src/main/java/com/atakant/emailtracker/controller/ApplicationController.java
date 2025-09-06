@@ -5,6 +5,7 @@ import com.atakant.emailtracker.repo.ApplicationRepository;
 import com.atakant.emailtracker.service.ApplicationService;
 import com.atakant.emailtracker.auth.User;
 import com.atakant.emailtracker.auth.UserRepository;
+import com.atakant.emailtracker.service.GmailService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -26,11 +27,13 @@ public class ApplicationController {
   private final ApplicationRepository applications;
   private final UserRepository users;
   private final ApplicationService applicationService;
+  private final GmailService gmailService;
 
-  public ApplicationController(ApplicationRepository applications, UserRepository users, ApplicationService applicationService) {
+  public ApplicationController(ApplicationRepository applications, UserRepository users, ApplicationService applicationService, GmailService gmailService) {
     this.applications = applications;
     this.users = users;
     this.applicationService = applicationService;
+    this.gmailService = gmailService;
   }
 
   /**
@@ -80,6 +83,7 @@ public class ApplicationController {
   public void deleteAll(@AuthenticationPrincipal OAuth2User principal) {
     User me = requireUser(principal);
     applicationService.deleteAllForUser(me.getId());
+    gmailService.deleteAllForUser(me.getId());
   }
 
   private User requireUser(OAuth2User principal) {

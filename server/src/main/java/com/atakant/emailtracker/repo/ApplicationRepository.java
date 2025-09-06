@@ -13,6 +13,4 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID> 
 
   void deleteByUserId(UUID userId);
 
-
-
 }

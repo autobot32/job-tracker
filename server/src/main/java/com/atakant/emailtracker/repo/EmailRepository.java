@@ -26,8 +26,6 @@ public interface EmailRepository extends JpaRepository<Email, UUID> {
     """)
     List<Email> findRecentForUser(@Param("userId") UUID userId, org.springframework.data.domain.Pageable pageable);
 
-    default List<Email> findRecentForUser(UUID userId, int limit) {
-        return findRecentForUser(userId, org.springframework.data.domain.PageRequest.of(0, limit));
-    }
+    void deleteByUserId(UUID userId);
 
 }

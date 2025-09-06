@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -280,6 +281,13 @@ public class GmailService {
             return null;
         }
     }
+
+    @Transactional
+    public void deleteAllForUser(UUID userId) {
+        emailRepository.deleteByUserId(userId);
+    }
+
+
 
 }
 
