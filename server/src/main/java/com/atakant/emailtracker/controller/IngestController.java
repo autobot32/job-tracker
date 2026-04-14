@@ -1,22 +1,20 @@
 package com.atakant.emailtracker.controller;
 
-import com.atakant.emailtracker.auth.UserRepository;
 import com.atakant.emailtracker.auth.User;
+import com.atakant.emailtracker.auth.UserRepository;
 import com.atakant.emailtracker.domain.Email;
-import com.atakant.emailtracker.gmail.GmailMessage;
 import com.atakant.emailtracker.service.CandidateEmailService;
 import com.atakant.emailtracker.service.GmailService;
+import com.atakant.emailtracker.service.RateLimitExceededException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
-
-import java.time.*;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,8 +28,6 @@ public class IngestController {
     private final CandidateEmailService candidateEmailService;
     private  final UserRepository userRepository;
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-
     @PostMapping("/preview")
     public String preview(Model model,
                           @org.springframework.security.core.annotation.AuthenticationPrincipal OAuth2User principal,
@@ -44,14 +40,20 @@ public class IngestController {
 
             UUID userId = resolveCurrentUserId(principal);
 
-            int saved = candidateEmailService.processEmails(userId, ingested);
+            CandidateEmailService.ProcessEmailsResult result = candidateEmailService.processEmails(userId, ingested);
 
             System.out.println("processed emails");
 
             model.addAttribute("payload",
-                    "Fetched & saved " + ingested.size() + " emails; saved " + saved + " applications.");
+                    "Fetched & saved " + ingested.size() + " emails; found "
+                            + result.candidateEmailsFound() + " candidate emails; processed "
+                            + result.candidateEmailsProcessed() + "; saved "
+                            + result.saved() + " applications."
+                            + (result.quotaTruncated() ? " " + result.quotaMessage() : ""));
 
             return "redirect:http://localhost:5173/applications";
+        } catch (RateLimitExceededException e) {
+            model.addAttribute("payload", e.getMessage());
         } catch (Exception e) {
             model.addAttribute("payload", "Error: " + e.getMessage());
         }
@@ -67,7 +69,7 @@ public class IngestController {
 
     @PostMapping("/run-json")
     @ResponseBody
-    public java.util.Map<String, Object> runJson(
+    public ResponseEntity<java.util.Map<String, Object>> runJson(
             Model model,
             @org.springframework.security.core.annotation.AuthenticationPrincipal OAuth2User principal,
             Authentication authentication,
@@ -79,20 +81,30 @@ public class IngestController {
             java.util.List<Email> ingested = gmailService.ingestAndSave(authentication, afterArg);
 
             java.util.UUID userId = resolveCurrentUserId(principal);
-            int saved = candidateEmailService.processEmails(userId, ingested);
+            CandidateEmailService.ProcessEmailsResult result = candidateEmailService.processEmails(userId, ingested);
 
-            return java.util.Map.of(
+            return ResponseEntity.ok(java.util.Map.of(
                     "ok", true,
                     "emails", ingested.size(),
-                    "saved", saved
-            );
-        } catch (Exception e) {
-            return java.util.Map.of(
+                    "candidateEmailsFound", result.candidateEmailsFound(),
+                    "candidateEmailsProcessed", result.candidateEmailsProcessed(),
+                    "saved", result.saved(),
+                    "quotaTruncated", result.quotaTruncated(),
+                    "quotaMessage", result.quotaMessage(),
+                    "remainingRunsToday", result.remainingRunsToday(),
+                    "remainingLlmEmailsToday", result.remainingLlmEmailsToday()
+            ));
+        } catch (RateLimitExceededException e) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(java.util.Map.of(
                     "ok", false,
                     "error", e.getMessage()
-            );
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(java.util.Map.of(
+                    "ok", false,
+                    "error", e.getMessage()
+            ));
         }
     }
 }
-
 

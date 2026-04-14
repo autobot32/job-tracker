@@ -1,24 +1,17 @@
 package com.atakant.emailtracker.service;
 
-import com.atakant.emailtracker.repo.EmailRepository;
-import com.atakant.emailtracker.repo.ApplicationRepository;
 import com.atakant.emailtracker.domain.Email;
-import com.atakant.emailtracker.domain.Application;
-
+import com.atakant.emailtracker.repo.ApplicationRepository;
 import com.atakant.emailtracker.utils.AppNorm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
-
 import org.springframework.transaction.annotation.Transactional;
-import java.util.concurrent.CompletableFuture;
-import java.time.OffsetDateTime;
+
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +20,7 @@ public class CandidateEmailService {
     private final ApplicationRepository appRepo;
     private final LlmClient llm;
     private final ThreadPoolTaskExecutor parseExecutor;
+    private final RateLimitService rateLimitService;
 
     private static final String[] KEYWORDS = {
             "application", "applied", "assessment", "coding challenge",
@@ -35,15 +29,25 @@ public class CandidateEmailService {
     };
 
     @Transactional
-    public int processEmails(UUID userId, List<Email> emails) {
+    public ProcessEmailsResult processEmails(UUID userId, List<Email> emails) {
         List<Email> candidates = emails.stream()
                 .filter(this::looksLikeCandidate)
                 .toList();
 
+        RateLimitService.QuotaReservation quotaReservation =
+                rateLimitService.reserveProcessingQuota(userId, candidates.size());
+        if (!quotaReservation.allowed()) {
+            throw new RateLimitExceededException(quotaReservation.message());
+        }
+
+        List<Email> emailsToProcess = candidates.stream()
+                .limit(quotaReservation.allowedCandidateEmails())
+                .toList();
+
         var rawPool = parseExecutor.getThreadPoolExecutor();
 
-        List<CompletableFuture<Extracted>> futures = new java.util.ArrayList<>(candidates.size());
-        for (Email e : candidates) {
+        List<CompletableFuture<Extracted>> futures = new java.util.ArrayList<>(emailsToProcess.size());
+        for (Email e : emailsToProcess) {
             try {
                 futures.add(CompletableFuture.supplyAsync(() -> {
                     try {
@@ -80,14 +84,35 @@ public class CandidateEmailService {
                 System.err.println("Failed to save application for email " + it.email.getId() + ": " + ex.getMessage());
             }
         }
-        System.out.printf("apps: saved=%d, skippedNonJob=%d, failed=%d%n", saved, skippedNonJob, failed);
-        return saved;
+        System.out.printf("apps: candidates=%d, processed=%d, saved=%d, skippedNonJob=%d, failed=%d%n",
+                candidates.size(), emailsToProcess.size(), saved, skippedNonJob, failed);
+
+        return new ProcessEmailsResult(
+                saved,
+                candidates.size(),
+                emailsToProcess.size(),
+                quotaReservation.truncated(),
+                quotaReservation.message(),
+                quotaReservation.remainingRunsToday(),
+                quotaReservation.remainingLlmEmailsToday()
+        );
     }
 
     private static final class Extracted {
         final Email email;
         final LlmClient.ApplicationExtractionResult parsed;
         Extracted(Email e, LlmClient.ApplicationExtractionResult p) { this.email = e; this.parsed = p; }
+    }
+
+    public record ProcessEmailsResult(
+            int saved,
+            int candidateEmailsFound,
+            int candidateEmailsProcessed,
+            boolean quotaTruncated,
+            String quotaMessage,
+            int remainingRunsToday,
+            int remainingLlmEmailsToday
+    ) {
     }
 
 

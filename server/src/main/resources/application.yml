@@ -1,6 +1,14 @@
 server:
   port: 8080
 
+app:
+  rate-limit:
+    enabled: true
+    max-runs-per-day: 4
+    max-llm-emails-per-run: 50
+    max-llm-emails-per-day: 200
+    zone-id: UTC
+
 logging:
   level:
     org.springframework.web.client: DEBUG
@@ -29,14 +37,14 @@ spring:
     prefix: classpath:/templates/
     suffix: .html
   config:
-    import: optional:file:.env[.properties]
+    import: optional:file:../.env[.properties]
 
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: 848707604002-53qv6heps2cl7mrd704svikfon4rklcn.apps.googleusercontent.com
+            client-id: 600665727373-o9h20kle3effj5ka9i48r2ctom0jhuja.apps.googleusercontent.com
             client-secret: ${GOOGLE_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             scope:

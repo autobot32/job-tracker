@@ -7,9 +7,7 @@ public final class AppNorm {
 
     private static final java.util.regex.Pattern YEAR = java.util.regex.Pattern.compile("\\b20\\d{2}\\b");
     private static final java.util.Set<String> ROLE_STOPWORDS = java.util.Set.of(
-            // keep "intern", drop only these:
             "internship", "program",
-            // (optional) season noise — remove if you want to keep seasons
             "summer", "fall", "spring", "winter"
     );
 

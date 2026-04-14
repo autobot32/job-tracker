@@ -58,7 +58,7 @@ public class Application {
   @Column(name = "normalized_role_title", nullable = false)
   private String normalizedRoleTitle;
 
-  @Column(name = "canonical_key", nullable = false)
+  @Column(name = "canonical_key")
   private String canonicalKey;
 
   @PrePersist
