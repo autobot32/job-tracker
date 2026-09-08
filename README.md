@@ -27,36 +27,6 @@ The goal: give job seekers a clean, automated dashboard—no more digging throug
 
 ---
 
-## Project Status
-
-### ✅ Working
-
-- Google OAuth2 login
-- Gmail API integration (read-only)
-- Email fetching + persistence
-- LLM-powered email parsing (OpenAI)
-- Application upsert logic (deduplication + status updates)
-- React frontend (Vite)
-- PostgreSQL via Docker Compose
-- Flyway migrations
-- Entities: Users, Emails, Applications, Tasks, Contacts
-- Reset endpoint (deletes all emails & applications for user)
-
-### 🔄 In Progress
-
-- Advanced dashboard features (filtering, analytics)
-- Task management (follow-ups, interviews, etc.)
-- More robust error handling and edge case coverage
-
-### 🧠 Planned
-
-- Google Sheets export
-- Application analytics & insights
-- Referral/contact management
-- Multi-provider email support
-
----
-
 ## 🛠 Tech Stack
 
 - **Backend:** Java 21, Spring Boot 3
